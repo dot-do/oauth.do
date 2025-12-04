@@ -1,7 +1,7 @@
 {
 	"name": "oauth.do",
 	"version": "0.1.0",
-	"description": "OAuth authentication SDK and CLI for .do Platform - with React hooks and components",
+	"description": "OAuth authentication SDK and CLI for .do Platform",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -33,12 +33,11 @@
 		"authentication",
 		"auth",
 		"login",
-		"authkit",
-		"react",
-		"hooks",
+		"api-key",
 		"cli",
+		"sdk",
 		"platform",
-		"sdk"
+		"workos"
 	],
 	"author": {
 		"name": "Platform.do",
