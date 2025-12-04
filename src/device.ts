@@ -1,0 +1,122 @@
+import { getConfig } from './config.js'
+import type { DeviceAuthorizationResponse, TokenResponse, TokenError } from './types.js'
+
+/**
+ * Initiate device authorization flow
+ * Following OAuth 2.0 Device Authorization Grant (RFC 8628)
+ *
+ * @returns Device authorization response with codes and URIs
+ */
+export async function authorizeDevice(): Promise<DeviceAuthorizationResponse> {
+	const config = getConfig()
+
+	if (!config.clientId) {
+		throw new Error('Client ID is required for device authorization. Set OAUTH_CLIENT_ID or configure({ clientId: "..." })')
+	}
+
+	try {
+		const response = await config.fetch(`https://${config.authKitDomain}/device/authorize`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				client_id: config.clientId,
+			}),
+		})
+
+		if (!response.ok) {
+			throw new Error(`Device authorization failed: ${response.statusText}`)
+		}
+
+		const data = (await response.json()) as DeviceAuthorizationResponse
+		return data
+	} catch (error) {
+		console.error('Device authorization error:', error)
+		throw error
+	}
+}
+
+/**
+ * Poll for tokens after device authorization
+ *
+ * @param deviceCode - Device code from authorization response
+ * @param interval - Polling interval in seconds (default: 5)
+ * @param expiresIn - Expiration time in seconds (default: 600)
+ * @returns Token response with access token and user info
+ */
+export async function pollForTokens(
+	deviceCode: string,
+	interval: number = 5,
+	expiresIn: number = 600
+): Promise<TokenResponse> {
+	const config = getConfig()
+
+	if (!config.clientId) {
+		throw new Error('Client ID is required for token polling')
+	}
+
+	const startTime = Date.now()
+	const timeout = expiresIn * 1000
+	let currentInterval = interval * 1000
+
+	while (true) {
+		// Check if expired
+		if (Date.now() - startTime > timeout) {
+			throw new Error('Device authorization expired. Please try again.')
+		}
+
+		// Wait for interval
+		await new Promise((resolve) => setTimeout(resolve, currentInterval))
+
+		try {
+			const response = await config.fetch(`https://${config.authKitDomain}/device/token`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+					device_code: deviceCode,
+					client_id: config.clientId,
+				}),
+			})
+
+			if (response.ok) {
+				const data = (await response.json()) as TokenResponse
+				return data
+			}
+
+			// Handle error responses
+			const errorData = (await response.json().catch(() => ({ error: 'unknown' }))) as { error?: string }
+			const error = (errorData.error || 'unknown') as TokenError
+
+			switch (error) {
+				case 'authorization_pending':
+					// Continue polling
+					continue
+
+				case 'slow_down':
+					// Increase interval by 5 seconds
+					currentInterval += 5000
+					continue
+
+				case 'access_denied':
+					throw new Error('Access denied by user')
+
+				case 'expired_token':
+					throw new Error('Device code expired')
+
+				default:
+					throw new Error(`Token polling failed: ${error}`)
+			}
+		} catch (error) {
+			// If it's our thrown error, re-throw it
+			if (error instanceof Error) {
+				throw error
+			}
+			// Otherwise continue polling
+			continue
+		}
+	}
+}
