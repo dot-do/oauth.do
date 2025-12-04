@@ -51,6 +51,22 @@ const url = buildAuthUrl({
 })
 ```
 
+### CLI Login Helper
+
+For building CLIs that need authentication:
+
+```typescript
+import { ensureLoggedIn } from 'oauth.do'
+
+// Get token (prompts login if needed, auto-opens browser)
+const { token, isNewLogin } = await ensureLoggedIn()
+
+// Use token for API calls
+const response = await fetch('https://api.example.com', {
+  headers: { Authorization: `Bearer ${token}` }
+})
+```
+
 ### Device Authorization Flow
 
 ```typescript
@@ -61,24 +77,6 @@ console.log('Visit:', auth.verification_uri)
 console.log('Code:', auth.user_code)
 
 const tokens = await pollForTokens(auth.device_code, auth.interval, auth.expires_in)
-```
-
-## API Keys
-
-```typescript
-import { createApiKey, listApiKeys, rotateApiKey, deleteApiKey } from 'oauth.do'
-
-// Create
-const key = await createApiKey({ name: 'my-key', expiresIn: '30d' })
-
-// List
-const keys = await listApiKeys()
-
-// Rotate
-const newKey = await rotateApiKey(key.id)
-
-// Delete
-await deleteApiKey(key.id)
 ```
 
 ## Token Storage
@@ -118,7 +116,7 @@ configure({
 
 - `DO_TOKEN` - Authentication token
 - `OAUTH_API_URL` - API base URL (default: `https://apis.do`)
-- `OAUTH_CLIENT_ID` - OAuth client ID (default: `oauth.do`)
+- `OAUTH_CLIENT_ID` - OAuth client ID
 - `OAUTH_AUTHKIT_DOMAIN` - AuthKit domain (default: `login.oauth.do`)
 
 ## License

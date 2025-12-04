@@ -37,7 +37,7 @@ const storage = createSecureStorage()
 function configureFromEnv() {
 	configure({
 		apiUrl: process.env.OAUTH_API_URL || process.env.API_URL || 'https://apis.do',
-		clientId: process.env.OAUTH_CLIENT_ID || 'oauth.do',
+		clientId: process.env.OAUTH_CLIENT_ID || 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
 		authKitDomain: process.env.OAUTH_AUTHKIT_DOMAIN || 'login.oauth.do',
 	})
 }
@@ -106,7 +106,7 @@ ${colors.cyan}Examples:${colors.reset}
   oauth.do logout
 
 ${colors.cyan}Environment Variables:${colors.reset}
-  OAUTH_CLIENT_ID        Client ID for OAuth (default: oauth.do)
+  OAUTH_CLIENT_ID        Client ID for OAuth
   OAUTH_AUTHKIT_DOMAIN   AuthKit domain (default: login.oauth.do)
   OAUTH_API_URL          API base URL (default: https://apis.do)
   DEBUG                  Enable debug output

@@ -15,18 +15,20 @@ export async function authorizeDevice(): Promise<DeviceAuthorizationResponse> {
 	}
 
 	try {
-		const response = await config.fetch(`https://${config.authKitDomain}/device/authorize`, {
+		const url = 'https://auth.apis.do/user_management/authorize/device'
+		const body = new URLSearchParams({ client_id: config.clientId })
+
+		const response = await config.fetch(url, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
 			},
-			body: new URLSearchParams({
-				client_id: config.clientId,
-			}),
+			body,
 		})
 
 		if (!response.ok) {
-			throw new Error(`Device authorization failed: ${response.statusText}`)
+			const errorText = await response.text()
+			throw new Error(`Device authorization failed: ${response.statusText} - ${errorText}`)
 		}
 
 		const data = (await response.json()) as DeviceAuthorizationResponse
@@ -70,7 +72,7 @@ export async function pollForTokens(
 		await new Promise((resolve) => setTimeout(resolve, currentInterval))
 
 		try {
-			const response = await config.fetch(`https://${config.authKitDomain}/device/token`, {
+			const response = await config.fetch('https://auth.apis.do/user_management/authenticate', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/x-www-form-urlencoded',

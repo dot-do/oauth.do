@@ -16,7 +16,7 @@ function getEnv(key: string): string | undefined {
  */
 let globalConfig: Required<OAuthConfig> = {
 	apiUrl: getEnv('OAUTH_API_URL') || getEnv('API_URL') || 'https://apis.do',
-	clientId: getEnv('OAUTH_CLIENT_ID') || 'oauth.do',
+	clientId: getEnv('OAUTH_CLIENT_ID') || 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
 	authKitDomain: getEnv('OAUTH_AUTHKIT_DOMAIN') || 'login.oauth.do',
 	fetch: globalThis.fetch,
 }
