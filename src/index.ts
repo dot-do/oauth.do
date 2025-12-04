@@ -7,6 +7,8 @@
 export { auth, login, logout, getToken, isAuthenticated, buildAuthUrl } from './auth.js'
 export { configure, getConfig } from './config.js'
 export { authorizeDevice, pollForTokens } from './device.js'
+export { createApiKey, listApiKeys, getApiKey, rotateApiKey, deleteApiKey } from './apikey.js'
+export type { ApiKey, CreateApiKeyOptions, RotateApiKeyOptions } from './apikey.js'
 export {
 	FileTokenStorage,
 	MemoryTokenStorage,

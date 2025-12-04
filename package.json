@@ -12,10 +12,12 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
-		}
+		},
+		"./mdx/*": "./src/mdx/*"
 	},
 	"files": [
 		"dist",
+		"src/mdx",
 		"README.md",
 		"LICENSE"
 	],
