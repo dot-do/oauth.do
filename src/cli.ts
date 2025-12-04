@@ -353,6 +353,7 @@ async function main() {
 
 	switch (command) {
 		case 'login':
+		case undefined: // Default to login when no command specified
 			await loginCommand()
 			break
 
@@ -373,12 +374,8 @@ async function main() {
 			break
 
 		default:
-			if (command) {
-				printError(`Unknown command: ${command}`)
-				console.log(`\nRun ${colors.cyan}oauth.do --help${colors.reset} for usage information`)
-			} else {
-				printHelp()
-			}
+			printError(`Unknown command: ${command}`)
+			console.log(`\nRun ${colors.cyan}oauth.do --help${colors.reset} for usage information`)
 			process.exit(1)
 	}
 }
