@@ -2,6 +2,17 @@ import { getConfig } from './config.js'
 import type { User, AuthResult } from './types.js'
 
 /**
+ * Safe environment variable access (works in Node, browser, and Workers)
+ */
+function getEnv(key: string): string | undefined {
+	// Check globalThis first (Workers)
+	if ((globalThis as any)[key]) return (globalThis as any)[key]
+	// Check process.env (Node.js)
+	if (typeof process !== 'undefined' && process.env?.[key]) return process.env[key]
+	return undefined
+}
+
+/**
  * Get current authenticated user
  * Calls GET /me endpoint
  *
@@ -10,7 +21,7 @@ import type { User, AuthResult } from './types.js'
  */
 export async function auth(token?: string): Promise<AuthResult> {
 	const config = getConfig()
-	const authToken = token || process.env.DO_TOKEN || ''
+	const authToken = token || getEnv('DO_TOKEN') || ''
 
 	if (!authToken) {
 		return { user: null }
@@ -83,7 +94,7 @@ export async function login(credentials: {
  */
 export async function logout(token?: string): Promise<void> {
 	const config = getConfig()
-	const authToken = token || process.env.DO_TOKEN || ''
+	const authToken = token || getEnv('DO_TOKEN') || ''
 
 	if (!authToken) {
 		return
@@ -107,10 +118,29 @@ export async function logout(token?: string): Promise<void> {
 }
 
 /**
- * Get token from environment
+ * Get token from environment or stored credentials
+ *
+ * Checks in order:
+ * 1. process.env.DO_ADMIN_TOKEN
+ * 2. process.env.DO_TOKEN
+ * 3. Stored token (keychain/secure file)
  */
-export function getToken(): string | null {
-	return process.env.DO_TOKEN || null
+export async function getToken(): Promise<string | null> {
+	// Check env vars first (globalThis for Workers, process.env for Node)
+	const adminToken = getEnv('DO_ADMIN_TOKEN')
+	if (adminToken) return adminToken
+	const doToken = getEnv('DO_TOKEN')
+	if (doToken) return doToken
+
+	// Try stored token (Node.js only - uses keychain/file storage)
+	try {
+		const { createSecureStorage } = await import('./storage.js')
+		const storage = createSecureStorage()
+		return await storage.getToken()
+	} catch {
+		// Storage not available (browser/worker) - return null
+		return null
+	}
 }
 
 /**

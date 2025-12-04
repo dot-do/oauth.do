@@ -6,6 +6,17 @@
 
 import { getConfig } from './config.js'
 
+/**
+ * Safe environment variable access (works in Node, browser, and Workers)
+ */
+function getEnv(key: string): string | undefined {
+  // Check globalThis first (Workers)
+  if ((globalThis as any)[key]) return (globalThis as any)[key]
+  // Check process.env (Node.js)
+  if (typeof process !== 'undefined' && process.env?.[key]) return process.env[key]
+  return undefined
+}
+
 export interface ApiKey {
   id: string
   key: string
@@ -32,7 +43,7 @@ export async function createApiKey(
   token?: string
 ): Promise<ApiKey> {
   const config = getConfig()
-  const authToken = token || process.env.DO_TOKEN
+  const authToken = token || getEnv('DO_TOKEN')
 
   if (!authToken) {
     throw new Error('Authentication required to create API key')
@@ -60,7 +71,7 @@ export async function createApiKey(
  */
 export async function listApiKeys(token?: string): Promise<ApiKey[]> {
   const config = getConfig()
-  const authToken = token || process.env.DO_TOKEN
+  const authToken = token || getEnv('DO_TOKEN')
 
   if (!authToken) {
     throw new Error('Authentication required to list API keys')
@@ -87,7 +98,7 @@ export async function listApiKeys(token?: string): Promise<ApiKey[]> {
  */
 export async function getApiKey(id: string, token?: string): Promise<ApiKey> {
   const config = getConfig()
-  const authToken = token || process.env.DO_TOKEN
+  const authToken = token || getEnv('DO_TOKEN')
 
   if (!authToken) {
     throw new Error('Authentication required to get API key')
@@ -118,7 +129,7 @@ export async function rotateApiKey(
   token?: string
 ): Promise<ApiKey> {
   const config = getConfig()
-  const authToken = token || process.env.DO_TOKEN
+  const authToken = token || getEnv('DO_TOKEN')
 
   if (!authToken) {
     throw new Error('Authentication required to rotate API key')
@@ -146,7 +157,7 @@ export async function rotateApiKey(
  */
 export async function deleteApiKey(id: string, token?: string): Promise<void> {
   const config = getConfig()
-  const authToken = token || process.env.DO_TOKEN
+  const authToken = token || getEnv('DO_TOKEN')
 
   if (!authToken) {
     throw new Error('Authentication required to delete API key')

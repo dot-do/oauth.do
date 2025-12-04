@@ -1,11 +1,25 @@
-import { homedir } from 'os'
-import { join } from 'path'
-import { readFile, writeFile, unlink, mkdir, chmod, stat } from 'fs/promises'
 import type { TokenStorage } from './types.js'
 
 // Keychain service and account identifiers
 const KEYCHAIN_SERVICE = 'oauth.do'
 const KEYCHAIN_ACCOUNT = 'access_token'
+
+/**
+ * Check if we're running in a Node.js environment
+ */
+function isNode(): boolean {
+	return typeof process !== 'undefined' &&
+		process.versions != null &&
+		process.versions.node != null
+}
+
+/**
+ * Safe environment variable access
+ */
+function getEnv(key: string): string | undefined {
+	if (typeof process !== 'undefined' && process.env?.[key]) return process.env[key]
+	return undefined
+}
 
 /**
  * Keychain-based token storage using OS credential manager
@@ -37,7 +51,7 @@ export class KeychainTokenStorage implements TokenStorage {
 		} catch (error) {
 			// keytar requires native dependencies that may not be available
 			// Fall back gracefully
-			if (process.env.DEBUG) {
+			if (getEnv('DEBUG')) {
 				console.warn('Keychain storage not available:', error)
 			}
 			return null
@@ -54,7 +68,7 @@ export class KeychainTokenStorage implements TokenStorage {
 			const token = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
 			return token
 		} catch (error) {
-			if (process.env.DEBUG) {
+			if (getEnv('DEBUG')) {
 				console.warn('Failed to get token from keychain:', error)
 			}
 			return null
@@ -111,31 +125,48 @@ export class KeychainTokenStorage implements TokenStorage {
  * Stores token in ~/.oauth.do/token with restricted permissions (0600)
  *
  * This is used as a fallback when keychain storage is not available.
+ * Only works in Node.js environment.
  */
 export class SecureFileTokenStorage implements TokenStorage {
-	private tokenPath: string
-	private configDir: string
+	private tokenPath: string | null = null
+	private configDir: string | null = null
+	private initialized = false
 
-	constructor() {
-		this.configDir = join(homedir(), '.oauth.do')
-		this.tokenPath = join(this.configDir, 'token')
+	private async init(): Promise<boolean> {
+		if (this.initialized) return this.tokenPath !== null
+		this.initialized = true
+
+		if (!isNode()) return false
+
+		try {
+			const os = await import('os')
+			const path = await import('path')
+			this.configDir = path.join(os.homedir(), '.oauth.do')
+			this.tokenPath = path.join(this.configDir, 'token')
+			return true
+		} catch {
+			return false
+		}
 	}
 
 	async getToken(): Promise<string | null> {
+		if (!(await this.init()) || !this.tokenPath) return null
+
 		try {
+			const fs = await import('fs/promises')
 			// Verify file permissions before reading
-			const stats = await stat(this.tokenPath)
+			const stats = await fs.stat(this.tokenPath)
 			const mode = stats.mode & 0o777
 
 			// Warn if file has insecure permissions
-			if (mode !== 0o600 && process.env.DEBUG) {
+			if (mode !== 0o600 && getEnv('DEBUG')) {
 				console.warn(
 					`Warning: Token file has insecure permissions (${mode.toString(8)}). ` +
 						`Expected 600. Run: chmod 600 ${this.tokenPath}`
 				)
 			}
 
-			const token = await readFile(this.tokenPath, 'utf-8')
+			const token = await fs.readFile(this.tokenPath, 'utf-8')
 			return token.trim()
 		} catch {
 			return null
@@ -143,15 +174,20 @@ export class SecureFileTokenStorage implements TokenStorage {
 	}
 
 	async setToken(token: string): Promise<void> {
+		if (!(await this.init()) || !this.tokenPath || !this.configDir) {
+			throw new Error('File storage not available')
+		}
+
 		try {
+			const fs = await import('fs/promises')
 			// Create config directory with restricted permissions
-			await mkdir(this.configDir, { recursive: true, mode: 0o700 })
+			await fs.mkdir(this.configDir, { recursive: true, mode: 0o700 })
 
 			// Write token file
-			await writeFile(this.tokenPath, token, { encoding: 'utf-8', mode: 0o600 })
+			await fs.writeFile(this.tokenPath, token, { encoding: 'utf-8', mode: 0o600 })
 
 			// Ensure permissions are correct (writeFile mode may be affected by umask)
-			await chmod(this.tokenPath, 0o600)
+			await fs.chmod(this.tokenPath, 0o600)
 		} catch (error) {
 			console.error('Failed to save token:', error)
 			throw error
@@ -159,8 +195,11 @@ export class SecureFileTokenStorage implements TokenStorage {
 	}
 
 	async removeToken(): Promise<void> {
+		if (!(await this.init()) || !this.tokenPath) return
+
 		try {
-			await unlink(this.tokenPath)
+			const fs = await import('fs/promises')
+			await fs.unlink(this.tokenPath)
 		} catch {
 			// Ignore errors if file doesn't exist
 		}
@@ -170,20 +209,38 @@ export class SecureFileTokenStorage implements TokenStorage {
 /**
  * File-based token storage for CLI (legacy, less secure)
  * Stores token in ~/.oauth.do/token
+ * Only works in Node.js environment.
  *
  * @deprecated Use SecureFileTokenStorage or KeychainTokenStorage instead
  */
 export class FileTokenStorage implements TokenStorage {
-	private tokenPath: string
+	private tokenPath: string | null = null
+	private configDir: string | null = null
+	private initialized = false
 
-	constructor() {
-		const configDir = join(homedir(), '.oauth.do')
-		this.tokenPath = join(configDir, 'token')
+	private async init(): Promise<boolean> {
+		if (this.initialized) return this.tokenPath !== null
+		this.initialized = true
+
+		if (!isNode()) return false
+
+		try {
+			const os = await import('os')
+			const path = await import('path')
+			this.configDir = path.join(os.homedir(), '.oauth.do')
+			this.tokenPath = path.join(this.configDir, 'token')
+			return true
+		} catch {
+			return false
+		}
 	}
 
 	async getToken(): Promise<string | null> {
+		if (!(await this.init()) || !this.tokenPath) return null
+
 		try {
-			const token = await readFile(this.tokenPath, 'utf-8')
+			const fs = await import('fs/promises')
+			const token = await fs.readFile(this.tokenPath, 'utf-8')
 			return token.trim()
 		} catch {
 			return null
@@ -191,10 +248,14 @@ export class FileTokenStorage implements TokenStorage {
 	}
 
 	async setToken(token: string): Promise<void> {
+		if (!(await this.init()) || !this.tokenPath || !this.configDir) {
+			throw new Error('File storage not available')
+		}
+
 		try {
-			const configDir = join(homedir(), '.oauth.do')
-			await mkdir(configDir, { recursive: true })
-			await writeFile(this.tokenPath, token, 'utf-8')
+			const fs = await import('fs/promises')
+			await fs.mkdir(this.configDir, { recursive: true })
+			await fs.writeFile(this.tokenPath, token, 'utf-8')
 		} catch (error) {
 			console.error('Failed to save token:', error)
 			throw error
@@ -202,8 +263,11 @@ export class FileTokenStorage implements TokenStorage {
 	}
 
 	async removeToken(): Promise<void> {
+		if (!(await this.init()) || !this.tokenPath) return
+
 		try {
-			await unlink(this.tokenPath)
+			const fs = await import('fs/promises')
+			await fs.unlink(this.tokenPath)
 		} catch {
 			// Ignore errors if file doesn't exist
 		}
@@ -305,7 +369,7 @@ export class CompositeTokenStorage implements TokenStorage {
 				try {
 					await this.keychainStorage.setToken(fileToken)
 					await this.fileStorage.removeToken()
-					if (process.env.DEBUG) {
+					if (getEnv('DEBUG')) {
 						console.log('Migrated token from file to keychain')
 					}
 				} catch {
@@ -340,9 +404,22 @@ export class CompositeTokenStorage implements TokenStorage {
 }
 
 /**
- * Create the default token storage for CLI use
- * Uses OS keychain when available, falls back to secure file storage
+ * Create the default token storage
+ * - Node.js: Uses OS keychain when available, falls back to secure file storage
+ * - Browser: Uses localStorage
+ * - Worker: Uses in-memory storage (tokens should be passed via env bindings)
  */
 export function createSecureStorage(): TokenStorage {
-	return new CompositeTokenStorage()
+	// Node.js - use keychain/file storage
+	if (isNode()) {
+		return new CompositeTokenStorage()
+	}
+
+	// Browser - use localStorage
+	if (typeof localStorage !== 'undefined') {
+		return new LocalStorageTokenStorage()
+	}
+
+	// Workers/other - use memory storage
+	return new MemoryTokenStorage()
 }
