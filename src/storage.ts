@@ -76,14 +76,18 @@ export class KeychainTokenStorage implements TokenStorage {
 	}
 
 	async setToken(token: string): Promise<void> {
-		const keytar = await this.getKeytar()
-		if (!keytar) {
-			throw new Error('Keychain storage not available')
-		}
-
 		try {
+			const keytar = await this.getKeytar()
+			if (!keytar) {
+				throw new Error('Keychain storage not available')
+			}
+
 			await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, token)
-		} catch (error) {
+		} catch (error: any) {
+			// Check if this is a native module error vs an actual keychain error
+			if (error?.code === 'MODULE_NOT_FOUND' || error?.message?.includes('Cannot find module')) {
+				throw new Error('Keychain storage not available: native module not built')
+			}
 			throw new Error(`Failed to save token to keychain: ${error}`)
 		}
 	}
@@ -105,16 +109,20 @@ export class KeychainTokenStorage implements TokenStorage {
 	 * Check if keychain storage is available on this system
 	 */
 	async isAvailable(): Promise<boolean> {
-		const keytar = await this.getKeytar()
-		if (!keytar) {
-			return false
-		}
-
 		try {
+			const keytar = await this.getKeytar()
+			if (!keytar) {
+				return false
+			}
+
 			// Try a read operation to verify keychain access
+			// This will throw if native module is not built
 			await keytar.getPassword(KEYCHAIN_SERVICE, '__test__')
 			return true
-		} catch {
+		} catch (error) {
+			if (getEnv('DEBUG')) {
+				console.warn('Keychain not available:', error)
+			}
 			return false
 		}
 	}

@@ -1,1 +1,5 @@
-import '@testing-library/jest-dom/vitest'
+/**
+ * OAuth.do test setup
+ */
+
+// Add any global test setup here
