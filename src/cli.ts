@@ -131,13 +131,13 @@ function printVersion() {
  * Wait for user to press Enter
  */
 async function waitForEnter(prompt: string): Promise<void> {
-	return new Promise((resolve) => {
-		const readline = require('readline')
-		const rl = readline.createInterface({
-			input: process.stdin,
-			output: process.stdout,
-		})
+	const readline = await import('node:readline')
+	const rl = readline.createInterface({
+		input: process.stdin,
+		output: process.stdout,
+	})
 
+	return new Promise((resolve) => {
 		rl.question(prompt, () => {
 			rl.close()
 			resolve()
