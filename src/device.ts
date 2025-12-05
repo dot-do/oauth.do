@@ -16,7 +16,10 @@ export async function authorizeDevice(): Promise<DeviceAuthorizationResponse> {
 
 	try {
 		const url = 'https://auth.apis.do/user_management/authorize/device'
-		const body = new URLSearchParams({ client_id: config.clientId })
+		const body = new URLSearchParams({
+			client_id: config.clientId,
+			scope: 'openid profile email',
+		})
 
 		const response = await config.fetch(url, {
 			method: 'POST',
