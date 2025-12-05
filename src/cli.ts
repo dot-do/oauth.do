@@ -349,6 +349,46 @@ async function statusCommand() {
 }
 
 /**
+ * Auto login or show current user
+ * If already logged in with valid token, show user info
+ * If not logged in or token expired, start login flow
+ */
+async function autoLoginOrShowUser() {
+	try {
+		// Check if we have a stored token
+		const token = await storage.getToken()
+
+		if (token) {
+			// Verify the token is still valid
+			const authResult = await auth(token)
+
+			if (authResult.user) {
+				// Already logged in - show user info
+				console.log(`${colors.green}✓${colors.reset} Already authenticated\n`)
+				if (authResult.user.name) {
+					console.log(`  ${colors.bright}${authResult.user.name}${colors.reset}`)
+				}
+				if (authResult.user.email) {
+					console.log(`  ${colors.gray}${authResult.user.email}${colors.reset}`)
+				}
+				if (authResult.user.id) {
+					console.log(`  ${colors.dim}ID: ${authResult.user.id}${colors.reset}`)
+				}
+				return
+			}
+			// Token exists but is invalid/expired - continue to login
+			printInfo('Session expired, logging in again...\n')
+		}
+
+		// Not logged in - start login flow
+		await loginCommand()
+	} catch (error) {
+		// If auth check fails, try to login
+		await loginCommand()
+	}
+}
+
+/**
  * Main CLI function
  */
 async function main() {
@@ -376,8 +416,12 @@ async function main() {
 
 	switch (command) {
 		case 'login':
-		case undefined: // Default to login when no command specified
 			await loginCommand()
+			break
+
+		case undefined:
+			// Default: check if logged in, login if not
+			await autoLoginOrShowUser()
 			break
 
 		case 'logout':
