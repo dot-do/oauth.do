@@ -50,7 +50,6 @@ export async function ensureLoggedIn(options: LoginOptions = {}): Promise<LoginR
 	// Auto-launch browser
 	if (openBrowser) {
 		try {
-			// @ts-expect-error - dynamic import of optional 'open' module
 			const open = await import('open')
 			await open.default(authResponse.verification_uri_complete)
 			print('Browser opened automatically\n')

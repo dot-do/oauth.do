@@ -1,6 +1,6 @@
 {
 	"name": "oauth.do",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "OAuth authentication SDK and CLI for .do Platform",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -56,7 +56,9 @@
 	"engines": {
 		"node": ">=18.0.0"
 	},
-	"dependencies": {},
+	"dependencies": {
+		"open": "^10.1.0"
+	},
 	"optionalDependencies": {
 		"keytar": "^7.9.0"
 	},

@@ -12,6 +12,6 @@ export default defineConfig({
 	treeshake: true,
 	minify: false,
 	outDir: 'dist',
-	// Don't bundle native modules - they must be required at runtime
-	external: ['keytar'],
+	// Don't bundle native modules or heavy dependencies - they must be required at runtime
+	external: ['keytar', 'open'],
 })

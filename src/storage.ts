@@ -46,7 +46,20 @@ export class KeychainTokenStorage implements TokenStorage {
 
 		try {
 			// Dynamic import to handle cases where keytar native module isn't available
-			this.keytar = await import('keytar')
+			const imported = await import('keytar')
+			// Handle ESM/CJS interop - keytar is CommonJS, so functions may be on .default
+			const keytarModule = (imported as any).default || imported
+			this.keytar = keytarModule as typeof import('keytar')
+
+			// Verify the module loaded correctly by checking for expected function
+			if (typeof this.keytar.getPassword !== 'function') {
+				if (getEnv('DEBUG')) {
+					console.warn('Keytar module loaded but getPassword is not a function:', Object.keys(this.keytar))
+				}
+				this.keytar = null
+				return null
+			}
+
 			return this.keytar
 		} catch (error) {
 			// keytar requires native dependencies that may not be available

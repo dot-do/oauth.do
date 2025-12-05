@@ -128,6 +128,24 @@ function printVersion() {
 }
 
 /**
+ * Wait for user to press Enter
+ */
+async function waitForEnter(prompt: string): Promise<void> {
+	return new Promise((resolve) => {
+		const readline = require('readline')
+		const rl = readline.createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		})
+
+		rl.question(prompt, () => {
+			rl.close()
+			resolve()
+		})
+	})
+}
+
+/**
  * Login command - device authorization flow
  */
 async function loginCommand() {
@@ -145,19 +163,24 @@ async function loginCommand() {
 		console.log(`\n  ${colors.dim}Or open this URL directly:${colors.reset}`)
 		console.log(`  ${colors.blue}${authResponse.verification_uri_complete}${colors.reset}\n`)
 
-		// Try to open browser automatically
+		// Prompt user to open browser
+		await waitForEnter(`${colors.cyan}Press Enter to open browser...${colors.reset}`)
+
+		// Try to open browser
 		const open = await import('open').catch(() => null)
 		if (open) {
 			try {
 				await open.default(authResponse.verification_uri_complete)
-				printInfo('Opened browser for authentication')
+				printSuccess('Opened browser for authentication')
 			} catch {
-				// Silently fail if can't open browser
+				printInfo(`Could not open browser. Please visit the URL above manually.`)
 			}
+		} else {
+			printInfo(`Could not open browser. Please visit the URL above manually.`)
 		}
 
 		// Step 3: Poll for tokens
-		console.log(`${colors.dim}Waiting for authorization...${colors.reset}\n`)
+		console.log(`\n${colors.dim}Waiting for authorization...${colors.reset}\n`)
 		const tokenResponse = await pollForTokens(
 			authResponse.device_code,
 			authResponse.interval,
