@@ -12,7 +12,7 @@
 
 import { authorizeDevice, pollForTokens } from './device.js'
 import { auth, logout as logoutFn } from './auth.js'
-import { createSecureStorage, CompositeTokenStorage } from './storage.js'
+import { createSecureStorage, SecureFileTokenStorage } from './storage.js'
 import { configure } from './config.js'
 
 // Color codes for terminal output
@@ -128,24 +128,6 @@ function printVersion() {
 }
 
 /**
- * Wait for user to press Enter
- */
-async function waitForEnter(prompt: string): Promise<void> {
-	const readline = await import('node:readline')
-	const rl = readline.createInterface({
-		input: process.stdin,
-		output: process.stdout,
-	})
-
-	return new Promise((resolve) => {
-		rl.question(prompt, () => {
-			rl.close()
-			resolve()
-		})
-	})
-}
-
-/**
  * Login command - device authorization flow
  */
 async function loginCommand() {
@@ -163,10 +145,7 @@ async function loginCommand() {
 		console.log(`\n  ${colors.dim}Or open this URL directly:${colors.reset}`)
 		console.log(`  ${colors.blue}${authResponse.verification_uri_complete}${colors.reset}\n`)
 
-		// Prompt user to open browser
-		await waitForEnter(`${colors.cyan}Press Enter to open browser...${colors.reset}`)
-
-		// Try to open browser
+		// Auto-open browser (no prompt - better for automation/agents)
 		const open = await import('open').catch(() => null)
 		if (open) {
 			try {
@@ -205,12 +184,10 @@ async function loginCommand() {
 		}
 
 		// Show storage info
-		const compositeStorage = storage as CompositeTokenStorage
-		if (typeof compositeStorage.getStorageInfo === 'function') {
-			const storageInfo = await compositeStorage.getStorageInfo()
-			const storageLabel =
-				storageInfo.type === 'keychain' ? `${colors.green}OS Keychain${colors.reset}` : `${colors.yellow}Secure File${colors.reset}`
-			console.log(`\n${colors.dim}Token stored in: ${storageLabel}${colors.reset}`)
+		const fileStorage = storage as SecureFileTokenStorage
+		if (typeof fileStorage.getStorageInfo === 'function') {
+			const storageInfo = await fileStorage.getStorageInfo()
+			console.log(`\n${colors.dim}Token stored in: ${colors.green}~/.oauth.do/token${colors.reset}${colors.reset}`)
 		}
 	} catch (error) {
 		printError('Login failed', error instanceof Error ? error : undefined)
@@ -309,19 +286,11 @@ async function statusCommand() {
 		console.log(`${colors.bright}OAuth.do Status${colors.reset}\n`)
 
 		// Get storage info
-		const compositeStorage = storage as CompositeTokenStorage
-		if (typeof compositeStorage.getStorageInfo === 'function') {
-			const storageInfo = await compositeStorage.getStorageInfo()
-			const storageLabel =
-				storageInfo.type === 'keychain' ? `${colors.green}OS Keychain${colors.reset}` : `${colors.yellow}Secure File${colors.reset}`
-
-			console.log(`${colors.cyan}Storage:${colors.reset} ${storageLabel}`)
-
-			if (storageInfo.type === 'keychain') {
-				console.log(`  ${colors.dim}Using system credential manager (most secure)${colors.reset}`)
-			} else {
-				console.log(`  ${colors.dim}Using ~/.oauth.do/token with 0600 permissions${colors.reset}`)
-			}
+		const fileStorage = storage as SecureFileTokenStorage
+		if (typeof fileStorage.getStorageInfo === 'function') {
+			const storageInfo = await fileStorage.getStorageInfo()
+			console.log(`${colors.cyan}Storage:${colors.reset} ${colors.green}Secure File${colors.reset}`)
+			console.log(`  ${colors.dim}Using ~/.oauth.do/token with 0600 permissions${colors.reset}`)
 		}
 
 		// Get auth status

@@ -145,7 +145,8 @@ export class KeychainTokenStorage implements TokenStorage {
  * Secure file-based token storage for CLI
  * Stores token in ~/.oauth.do/token with restricted permissions (0600)
  *
- * This is used as a fallback when keychain storage is not available.
+ * This is the default storage for Node.js CLI because it doesn't require
+ * GUI authorization popups like the keychain does on macOS.
  * Only works in Node.js environment.
  */
 export class SecureFileTokenStorage implements TokenStorage {
@@ -224,6 +225,14 @@ export class SecureFileTokenStorage implements TokenStorage {
 		} catch {
 			// Ignore errors if file doesn't exist
 		}
+	}
+
+	/**
+	 * Get information about the storage backend
+	 */
+	async getStorageInfo(): Promise<{ type: 'file'; secure: boolean; path: string | null }> {
+		await this.init()
+		return { type: 'file', secure: true, path: this.tokenPath }
 	}
 }
 
@@ -426,14 +435,17 @@ export class CompositeTokenStorage implements TokenStorage {
 
 /**
  * Create the default token storage
- * - Node.js: Uses OS keychain when available, falls back to secure file storage
+ * - Node.js: Uses secure file storage (~/.oauth.do/token with 0600 permissions)
  * - Browser: Uses localStorage
  * - Worker: Uses in-memory storage (tokens should be passed via env bindings)
+ *
+ * Note: We use file storage by default because keychain storage on macOS
+ * requires GUI authorization popups, which breaks automation and agent workflows.
  */
 export function createSecureStorage(): TokenStorage {
-	// Node.js - use keychain/file storage
+	// Node.js - use secure file storage (no keychain popups)
 	if (isNode()) {
-		return new CompositeTokenStorage()
+		return new SecureFileTokenStorage()
 	}
 
 	// Browser - use localStorage

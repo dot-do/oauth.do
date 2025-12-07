@@ -2,6 +2,20 @@ import { getConfig } from './config.js'
 import type { User, AuthResult } from './types.js'
 
 /**
+ * Resolve a secret that could be a plain string or a secrets store binding
+ * Secrets store bindings have a .get() method that returns a Promise<string>
+ * @see https://developers.cloudflare.com/workers/configuration/secrets/#secrets-store
+ */
+async function resolveSecret(value: unknown): Promise<string | null> {
+	if (!value) return null
+	if (typeof value === 'string') return value
+	if (typeof value === 'object' && typeof (value as any).get === 'function') {
+		return await (value as any).get()
+	}
+	return null
+}
+
+/**
  * Safe environment variable access (works in Node, browser, and Workers)
  */
 function getEnv(key: string): string | undefined {
@@ -19,7 +33,7 @@ function getEnv(key: string): string | undefined {
  * @param token - Optional authentication token (will use DO_TOKEN env var if not provided)
  * @returns Authentication result with user info or null if not authenticated
  */
-export async function auth(token?: string): Promise<AuthResult> {
+export async function getUser(token?: string): Promise<AuthResult> {
 	const config = getConfig()
 	const authToken = token || getEnv('DO_TOKEN') || ''
 
@@ -121,16 +135,34 @@ export async function logout(token?: string): Promise<void> {
  * Get token from environment or stored credentials
  *
  * Checks in order:
- * 1. process.env.DO_ADMIN_TOKEN
- * 2. process.env.DO_TOKEN
- * 3. Stored token (keychain/secure file)
+ * 1. globalThis.DO_ADMIN_TOKEN / DO_TOKEN (Workers legacy)
+ * 2. process.env.DO_ADMIN_TOKEN / DO_TOKEN (Node.js)
+ * 3. cloudflare:workers env import (Workers 2025+) - supports secrets store bindings
+ * 4. Stored token (keychain/secure file)
+ *
+ * @see https://developers.cloudflare.com/changelog/2025-03-17-importable-env/
  */
 export async function getToken(): Promise<string | null> {
-	// Check env vars first (globalThis for Workers, process.env for Node)
+	// Check env vars first (globalThis for Workers legacy, process.env for Node)
 	const adminToken = getEnv('DO_ADMIN_TOKEN')
 	if (adminToken) return adminToken
 	const doToken = getEnv('DO_TOKEN')
 	if (doToken) return doToken
+
+	// Try cloudflare:workers env import (Workers 2025+)
+	// Supports both plain strings and secrets store bindings
+	try {
+		// @ts-ignore - cloudflare:workers only available in Workers runtime
+		const { env } = await import('cloudflare:workers')
+
+		const cfAdminToken = await resolveSecret((env as any).DO_ADMIN_TOKEN)
+		if (cfAdminToken) return cfAdminToken
+
+		const cfToken = await resolveSecret((env as any).DO_TOKEN)
+		if (cfToken) return cfToken
+	} catch {
+		// Not in Workers environment or env not available
+	}
 
 	// Try stored token (Node.js only - uses keychain/file storage)
 	try {
@@ -147,8 +179,26 @@ export async function getToken(): Promise<string | null> {
  * Check if user is authenticated (has valid token)
  */
 export async function isAuthenticated(token?: string): Promise<boolean> {
-	const result = await auth(token)
+	const result = await getUser(token)
 	return result.user !== null
+}
+
+/**
+ * Auth provider function type for HTTP clients
+ */
+export type AuthProvider = () => string | null | undefined | Promise<string | null | undefined>
+
+/**
+ * Create an auth provider function for HTTP clients (apis.do, rpc.do)
+ * Returns a function that resolves to a token string
+ *
+ * @example
+ * import { auth } from 'oauth.do'
+ * const getAuth = auth()
+ * const token = await getAuth()
+ */
+export function auth(): AuthProvider {
+	return getToken
 }
 
 /**

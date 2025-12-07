@@ -4,7 +4,8 @@
  * @packageDocumentation
  */
 
-export { auth, login, logout, getToken, isAuthenticated, buildAuthUrl } from './auth.js'
+export { auth, getUser, login, logout, getToken, isAuthenticated, buildAuthUrl } from './auth.js'
+export type { AuthProvider } from './auth.js'
 export { configure, getConfig } from './config.js'
 export { authorizeDevice, pollForTokens } from './device.js'
 export { ensureLoggedIn, forceLogin, ensureLoggedOut } from './login.js'

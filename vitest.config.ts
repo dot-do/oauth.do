@@ -13,4 +13,10 @@ export default defineConfig({
 			exclude: ['dist', 'node_modules', 'tests'],
 		},
 	},
+	resolve: {
+		alias: {
+			// Mock cloudflare:workers for Node.js tests
+			'cloudflare:workers': resolve(__dirname, 'tests/mocks/cloudflare-workers.ts'),
+		},
+	},
 })

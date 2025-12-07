@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { auth, login, logout } from '../src/auth.js'
+import { getUser, login, logout } from '../src/auth.js'
 import { configure } from '../src/config.js'
 
 describe('auth', () => {
@@ -15,9 +15,9 @@ describe('auth', () => {
 		})
 	})
 
-	describe('auth()', () => {
+	describe('getUser()', () => {
 		it('should return null user when no token provided', async () => {
-			const result = await auth()
+			const result = await getUser()
 			expect(result.user).toBeNull()
 		})
 
@@ -29,7 +29,7 @@ describe('auth', () => {
 
 			configure({ fetch: mockFetch as any })
 
-			const result = await auth('test-token')
+			const result = await getUser('test-token')
 
 			expect(mockFetch).toHaveBeenCalledWith('https://test.apis.do/me', {
 				method: 'GET',
@@ -51,7 +51,7 @@ describe('auth', () => {
 
 			configure({ fetch: mockFetch as any })
 
-			const result = await auth('invalid-token')
+			const result = await getUser('invalid-token')
 
 			expect(result.user).toBeNull()
 		})

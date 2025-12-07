@@ -230,9 +230,9 @@ describe('TokenStorage', () => {
 	})
 
 	describe('createSecureStorage', () => {
-		it('should create a CompositeTokenStorage instance', () => {
+		it('should create a SecureFileTokenStorage instance', () => {
 			const storage = createSecureStorage()
-			expect(storage).toBeInstanceOf(CompositeTokenStorage)
+			expect(storage).toBeInstanceOf(SecureFileTokenStorage)
 		})
 
 		it('should be usable as TokenStorage interface', async () => {
