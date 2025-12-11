@@ -30,7 +30,8 @@
 		"dev": "tsup --watch",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"prepublishOnly": "pnpm build && pnpm test"
+		"check:publish": "node -e \"const pkg = require('./package.json'); const deps = JSON.stringify(pkg.dependencies || {}); if (deps.includes('workspace:')) { console.error('ERROR: workspace: protocol found in dependencies. Replace with actual versions before publishing.'); process.exit(1); }\"",
+		"prepublishOnly": "pnpm check:publish && pnpm build && pnpm test"
 	},
 	"keywords": [
 		"oauth",
