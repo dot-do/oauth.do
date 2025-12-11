@@ -1,6 +1,6 @@
 {
 	"name": "oauth.do",
-	"version": "0.1.9",
+	"version": "0.1.10",
 	"description": "OAuth authentication SDK and CLI for .do Platform",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -12,6 +12,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
+		},
+		"./node": {
+			"types": "./dist/node.d.ts",
+			"import": "./dist/node.js"
 		},
 		"./mdx/*": "./src/mdx/*"
 	},
