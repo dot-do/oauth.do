@@ -2,12 +2,24 @@ import { getConfig } from './config.js'
 import type { DeviceAuthorizationResponse, TokenResponse, TokenError } from './types.js'
 
 /**
+ * OAuth provider options for direct provider login
+ * Bypasses AuthKit login screen and goes directly to the provider
+ */
+export type OAuthProvider = 'GitHubOAuth' | 'GoogleOAuth' | 'MicrosoftOAuth' | 'AppleOAuth'
+
+export interface DeviceAuthOptions {
+	/** OAuth provider to use directly (bypasses AuthKit login screen) */
+	provider?: OAuthProvider
+}
+
+/**
  * Initiate device authorization flow
  * Following OAuth 2.0 Device Authorization Grant (RFC 8628)
  *
+ * @param options - Optional settings including provider for direct OAuth
  * @returns Device authorization response with codes and URIs
  */
-export async function authorizeDevice(): Promise<DeviceAuthorizationResponse> {
+export async function authorizeDevice(options: DeviceAuthOptions = {}): Promise<DeviceAuthorizationResponse> {
 	const config = getConfig()
 
 	if (!config.clientId) {
@@ -20,6 +32,11 @@ export async function authorizeDevice(): Promise<DeviceAuthorizationResponse> {
 			client_id: config.clientId,
 			scope: 'openid profile email',
 		})
+
+		// Add provider if specified (bypasses AuthKit login screen)
+		if (options.provider) {
+			body.set('provider', options.provider)
+		}
 
 		const response = await config.fetch(url, {
 			method: 'POST',

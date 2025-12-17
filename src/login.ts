@@ -4,15 +4,20 @@
  */
 
 import { authorizeDevice, pollForTokens } from './device.js'
+import type { OAuthProvider } from './device.js'
 import { createSecureStorage } from './storage.js'
 import { refreshAccessToken, getUser } from './auth.js'
 import type { StoredTokenData } from './types.js'
+
+export type { OAuthProvider } from './device.js'
 
 export interface LoginOptions {
 	/** Open browser automatically (default: true) */
 	openBrowser?: boolean
 	/** Custom print function for output */
 	print?: (message: string) => void
+	/** OAuth provider to use directly (bypasses AuthKit login screen) */
+	provider?: OAuthProvider
 	/** Storage to use (default: createSecureStorage()) */
 	storage?: {
 		getToken: () => Promise<string | null>
@@ -45,7 +50,7 @@ function isTokenExpired(expiresAt?: number): boolean {
  * Automatically refreshes expired tokens if refresh_token is available
  */
 export async function ensureLoggedIn(options: LoginOptions = {}): Promise<LoginResult> {
-	const { openBrowser = true, print = console.log, storage = createSecureStorage() } = options
+	const { openBrowser = true, print = console.log, provider, storage = createSecureStorage() } = options
 
 	// Check for existing token data
 	const tokenData = storage.getTokenData ? await storage.getTokenData() : null
@@ -121,7 +126,7 @@ export async function ensureLoggedIn(options: LoginOptions = {}): Promise<LoginR
 	// No valid token, start device flow
 	print('\nLogging in...\n')
 
-	const authResponse = await authorizeDevice()
+	const authResponse = await authorizeDevice({ provider })
 
 	print(`To complete login:`)
 	print(`  1. Visit: ${authResponse.verification_uri}`)

@@ -36,4 +36,4 @@ export type {
 } from './types.js'
 
 // Re-export login types only (not functions - they use 'open' package)
-export type { LoginOptions, LoginResult } from './login.js'
+export type { LoginOptions, LoginResult, OAuthProvider } from './login.js'
