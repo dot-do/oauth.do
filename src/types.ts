@@ -77,10 +77,22 @@ export type TokenError =
 	| 'unknown'
 
 /**
+ * Stored token data including refresh token and expiration
+ */
+export interface StoredTokenData {
+	accessToken: string
+	refreshToken?: string
+	expiresAt?: number // Unix timestamp in milliseconds
+}
+
+/**
  * Token storage interface
  */
 export interface TokenStorage {
 	getToken(): Promise<string | null>
 	setToken(token: string): Promise<void>
 	removeToken(): Promise<void>
+	// New methods for full token data
+	getTokenData?(): Promise<StoredTokenData | null>
+	setTokenData?(data: StoredTokenData): Promise<void>
 }

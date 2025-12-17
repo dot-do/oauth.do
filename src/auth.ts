@@ -1,5 +1,5 @@
 import { getConfig } from './config.js'
-import type { User, AuthResult } from './types.js'
+import type { User, AuthResult, TokenResponse, StoredTokenData } from './types.js'
 
 /**
  * Resolve a secret that could be a plain string or a secrets store binding
@@ -199,6 +199,75 @@ export type AuthProvider = () => string | null | undefined | Promise<string | nu
  */
 export function auth(): AuthProvider {
 	return getToken
+}
+
+/**
+ * Refresh an access token using a refresh token
+ *
+ * @param refreshToken - The refresh token from the original auth response
+ * @returns New token response with fresh access_token (and possibly new refresh_token)
+ */
+export async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
+	const config = getConfig()
+
+	if (!config.clientId) {
+		throw new Error('Client ID is required for token refresh')
+	}
+
+	const response = await config.fetch('https://auth.apis.do/user_management/authenticate', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/x-www-form-urlencoded',
+		},
+		body: new URLSearchParams({
+			grant_type: 'refresh_token',
+			refresh_token: refreshToken,
+			client_id: config.clientId,
+		}),
+	})
+
+	if (!response.ok) {
+		const errorText = await response.text()
+		throw new Error(`Token refresh failed: ${response.status} - ${errorText}`)
+	}
+
+	return (await response.json()) as TokenResponse
+}
+
+/**
+ * Get stored token data from storage
+ */
+export async function getStoredTokenData(): Promise<StoredTokenData | null> {
+	try {
+		const { createSecureStorage } = await import('./storage.js')
+		const storage = createSecureStorage()
+		if (storage.getTokenData) {
+			return await storage.getTokenData()
+		}
+		// Fall back to just access token
+		const token = await storage.getToken()
+		return token ? { accessToken: token } : null
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Store token data including refresh token
+ */
+export async function storeTokenData(data: StoredTokenData): Promise<void> {
+	try {
+		const { createSecureStorage } = await import('./storage.js')
+		const storage = createSecureStorage()
+		if (storage.setTokenData) {
+			await storage.setTokenData(data)
+		} else {
+			await storage.setToken(data.accessToken)
+		}
+	} catch (error) {
+		console.error('Failed to store token data:', error)
+		throw error
+	}
 }
 
 /**

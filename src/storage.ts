@@ -1,4 +1,4 @@
-import type { TokenStorage } from './types.js'
+import type { TokenStorage, StoredTokenData } from './types.js'
 
 // Keychain service and account identifiers
 const KEYCHAIN_SERVICE = 'oauth.do'
@@ -172,15 +172,20 @@ export class SecureFileTokenStorage implements TokenStorage {
 	}
 
 	async getToken(): Promise<string | null> {
+		// Try to get from token data first (new format)
+		const data = await this.getTokenData()
+		if (data) {
+			return data.accessToken
+		}
+
+		// Fall back to legacy plain text format
 		if (!(await this.init()) || !this.tokenPath) return null
 
 		try {
 			const fs = await import('fs/promises')
-			// Verify file permissions before reading
 			const stats = await fs.stat(this.tokenPath)
 			const mode = stats.mode & 0o777
 
-			// Warn if file has insecure permissions
 			if (mode !== 0o600 && getEnv('DEBUG')) {
 				console.warn(
 					`Warning: Token file has insecure permissions (${mode.toString(8)}). ` +
@@ -188,30 +193,58 @@ export class SecureFileTokenStorage implements TokenStorage {
 				)
 			}
 
-			const token = await fs.readFile(this.tokenPath, 'utf-8')
-			return token.trim()
+			const content = await fs.readFile(this.tokenPath, 'utf-8')
+			const trimmed = content.trim()
+
+			// Check if it's JSON (new format) or plain token (legacy)
+			if (trimmed.startsWith('{')) {
+				const data = JSON.parse(trimmed) as StoredTokenData
+				return data.accessToken
+			}
+
+			return trimmed
 		} catch {
 			return null
 		}
 	}
 
 	async setToken(token: string): Promise<void> {
+		// Store as token data for consistency, trimming whitespace
+		await this.setTokenData({ accessToken: token.trim() })
+	}
+
+	async getTokenData(): Promise<StoredTokenData | null> {
+		if (!(await this.init()) || !this.tokenPath) return null
+
+		try {
+			const fs = await import('fs/promises')
+			const content = await fs.readFile(this.tokenPath, 'utf-8')
+			const trimmed = content.trim()
+
+			// Check if it's JSON format
+			if (trimmed.startsWith('{')) {
+				return JSON.parse(trimmed) as StoredTokenData
+			}
+
+			// Legacy plain text format - convert to token data
+			return { accessToken: trimmed }
+		} catch {
+			return null
+		}
+	}
+
+	async setTokenData(data: StoredTokenData): Promise<void> {
 		if (!(await this.init()) || !this.tokenPath || !this.configDir) {
 			throw new Error('File storage not available')
 		}
 
 		try {
 			const fs = await import('fs/promises')
-			// Create config directory with restricted permissions
 			await fs.mkdir(this.configDir, { recursive: true, mode: 0o700 })
-
-			// Write token file
-			await fs.writeFile(this.tokenPath, token, { encoding: 'utf-8', mode: 0o600 })
-
-			// Ensure permissions are correct (writeFile mode may be affected by umask)
+			await fs.writeFile(this.tokenPath, JSON.stringify(data), { encoding: 'utf-8', mode: 0o600 })
 			await fs.chmod(this.tokenPath, 0o600)
 		} catch (error) {
-			console.error('Failed to save token:', error)
+			console.error('Failed to save token data:', error)
 			throw error
 		}
 	}
