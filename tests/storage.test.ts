@@ -247,5 +247,48 @@ describe('TokenStorage', () => {
 			const removedToken = await storage.getToken()
 			expect(removedToken).toBeNull()
 		})
+
+		it('should support custom storage path', async () => {
+			const customPath = join(tmpdir(), `test-oauth-${Date.now()}`, 'custom-tokens.json')
+			const storage = createSecureStorage(customPath)
+			const testToken = `custom-path-test-${Date.now()}`
+
+			await storage.setToken(testToken)
+			const token = await storage.getToken()
+			expect(token).toBe(testToken)
+
+			// Verify the file was created at the custom path
+			const fileContent = await readFile(customPath, 'utf-8')
+			const data = JSON.parse(fileContent)
+			expect(data.accessToken).toBe(testToken)
+
+			// Verify file has correct permissions
+			const stats = await stat(customPath)
+			const mode = stats.mode & 0o777
+			expect(mode).toBe(0o600)
+
+			// Clean up
+			await storage.removeToken()
+			await rm(join(tmpdir(), customPath.split('/').slice(-2, -1)[0]), { recursive: true, force: true })
+		})
+
+		it('should expand tilde in custom path', async () => {
+			const storage = createSecureStorage('~/.test-oauth/tokens.json')
+			const testToken = `tilde-test-${Date.now()}`
+
+			await storage.setToken(testToken)
+			const token = await storage.getToken()
+			expect(token).toBe(testToken)
+
+			// Verify the file was created in home directory
+			const expandedPath = join(process.env.HOME || '', '.test-oauth', 'tokens.json')
+			const fileContent = await readFile(expandedPath, 'utf-8')
+			const data = JSON.parse(fileContent)
+			expect(data.accessToken).toBe(testToken)
+
+			// Clean up
+			await storage.removeToken()
+			await rm(join(process.env.HOME || '', '.test-oauth'), { recursive: true, force: true })
+		})
 	})
 })

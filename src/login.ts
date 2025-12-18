@@ -8,6 +8,7 @@ import type { OAuthProvider } from './device.js'
 import { createSecureStorage } from './storage.js'
 import { refreshAccessToken, getUser } from './auth.js'
 import type { StoredTokenData } from './types.js'
+import { getConfig } from './config.js'
 
 export type { OAuthProvider } from './device.js'
 
@@ -50,7 +51,8 @@ function isTokenExpired(expiresAt?: number): boolean {
  * Automatically refreshes expired tokens if refresh_token is available
  */
 export async function ensureLoggedIn(options: LoginOptions = {}): Promise<LoginResult> {
-	const { openBrowser = true, print = console.log, provider, storage = createSecureStorage() } = options
+	const config = getConfig()
+	const { openBrowser = true, print = console.log, provider, storage = createSecureStorage(config.storagePath) } = options
 
 	// Check for existing token data
 	const tokenData = storage.getTokenData ? await storage.getTokenData() : null
@@ -179,7 +181,8 @@ export async function ensureLoggedIn(options: LoginOptions = {}): Promise<LoginR
  * Force a new login (ignores existing token)
  */
 export async function forceLogin(options: LoginOptions = {}): Promise<LoginResult> {
-	const { storage = createSecureStorage() } = options
+	const config = getConfig()
+	const { storage = createSecureStorage(config.storagePath) } = options
 	await storage.removeToken()
 	return ensureLoggedIn(options)
 }
@@ -188,7 +191,8 @@ export async function forceLogin(options: LoginOptions = {}): Promise<LoginResul
  * Logout and remove stored token
  */
 export async function ensureLoggedOut(options: LoginOptions = {}): Promise<void> {
-	const { print = console.log, storage = createSecureStorage() } = options
+	const config = getConfig()
+	const { print = console.log, storage = createSecureStorage(config.storagePath) } = options
 	await storage.removeToken()
 	print('Logged out successfully\n')
 }

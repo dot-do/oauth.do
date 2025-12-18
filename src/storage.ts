@@ -153,6 +153,11 @@ export class SecureFileTokenStorage implements TokenStorage {
 	private tokenPath: string | null = null
 	private configDir: string | null = null
 	private initialized = false
+	private customPath?: string
+
+	constructor(customPath?: string) {
+		this.customPath = customPath
+	}
 
 	private async init(): Promise<boolean> {
 		if (this.initialized) return this.tokenPath !== null
@@ -163,8 +168,21 @@ export class SecureFileTokenStorage implements TokenStorage {
 		try {
 			const os = await import('os')
 			const path = await import('path')
-			this.configDir = path.join(os.homedir(), '.oauth.do')
-			this.tokenPath = path.join(this.configDir, 'token')
+
+			// Use custom path if provided
+			if (this.customPath) {
+				// Expand ~ to home directory
+				const expandedPath = this.customPath.startsWith('~/')
+					? path.join(os.homedir(), this.customPath.slice(2))
+					: this.customPath
+
+				this.tokenPath = expandedPath
+				this.configDir = path.dirname(expandedPath)
+			} else {
+				// Default path
+				this.configDir = path.join(os.homedir(), '.oauth.do')
+				this.tokenPath = path.join(this.configDir, 'token')
+			}
 			return true
 		} catch {
 			return false
@@ -474,11 +492,13 @@ export class CompositeTokenStorage implements TokenStorage {
  *
  * Note: We use file storage by default because keychain storage on macOS
  * requires GUI authorization popups, which breaks automation and agent workflows.
+ *
+ * @param storagePath - Optional custom path for token storage (e.g., '~/.studio/tokens.json')
  */
-export function createSecureStorage(): TokenStorage {
+export function createSecureStorage(storagePath?: string): TokenStorage {
 	// Node.js - use secure file storage (no keychain popups)
 	if (isNode()) {
-		return new SecureFileTokenStorage()
+		return new SecureFileTokenStorage(storagePath)
 	}
 
 	// Browser - use localStorage

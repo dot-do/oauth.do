@@ -13,6 +13,19 @@ export type { AuthProvider } from './auth.js'
 export { configure, getConfig } from './config.js'
 export { authorizeDevice, pollForTokens } from './device.js'
 
+// GitHub Device Flow
+export {
+	startGitHubDeviceFlow,
+	pollGitHubDeviceFlow,
+	getGitHubUser,
+} from './github-device.js'
+export type {
+	GitHubDeviceFlowOptions,
+	GitHubDeviceAuthResponse,
+	GitHubTokenResponse,
+	GitHubUser,
+} from './github-device.js'
+
 // Storage utilities (browser-safe - uses dynamic imports for Node.js features)
 export {
 	FileTokenStorage,

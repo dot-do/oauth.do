@@ -23,6 +23,13 @@ export interface OAuthConfig {
 	 * Custom fetch implementation
 	 */
 	fetch?: typeof fetch
+
+	/**
+	 * Custom path for token storage
+	 * Supports ~ for home directory (e.g., '~/.studio/tokens.json')
+	 * @default '~/.oauth.do/token'
+	 */
+	storagePath?: string
 }
 
 /**

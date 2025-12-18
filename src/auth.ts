@@ -167,7 +167,8 @@ export async function getToken(): Promise<string | null> {
 	// Try stored token (Node.js only - uses keychain/file storage)
 	try {
 		const { createSecureStorage } = await import('./storage.js')
-		const storage = createSecureStorage()
+		const config = getConfig()
+		const storage = createSecureStorage(config.storagePath)
 		return await storage.getToken()
 	} catch {
 		// Storage not available (browser/worker) - return null
@@ -240,7 +241,8 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
 export async function getStoredTokenData(): Promise<StoredTokenData | null> {
 	try {
 		const { createSecureStorage } = await import('./storage.js')
-		const storage = createSecureStorage()
+		const config = getConfig()
+		const storage = createSecureStorage(config.storagePath)
 		if (storage.getTokenData) {
 			return await storage.getTokenData()
 		}
@@ -258,7 +260,8 @@ export async function getStoredTokenData(): Promise<StoredTokenData | null> {
 export async function storeTokenData(data: StoredTokenData): Promise<void> {
 	try {
 		const { createSecureStorage } = await import('./storage.js')
-		const storage = createSecureStorage()
+		const config = getConfig()
+		const storage = createSecureStorage(config.storagePath)
 		if (storage.setTokenData) {
 			await storage.setTokenData(data)
 		} else {

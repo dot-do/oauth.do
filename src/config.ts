@@ -13,12 +13,14 @@ function getEnv(key: string): string | undefined {
 
 /**
  * Global OAuth configuration
+ * Note: storagePath is optional and may be undefined
  */
-let globalConfig: Required<OAuthConfig> = {
+let globalConfig: Omit<Required<OAuthConfig>, 'storagePath'> & Pick<OAuthConfig, 'storagePath'> = {
 	apiUrl: getEnv('OAUTH_API_URL') || getEnv('API_URL') || 'https://apis.do',
 	clientId: getEnv('OAUTH_CLIENT_ID') || 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
 	authKitDomain: getEnv('OAUTH_AUTHKIT_DOMAIN') || 'login.oauth.do',
 	fetch: globalThis.fetch,
+	storagePath: getEnv('OAUTH_STORAGE_PATH'),
 }
 
 /**
@@ -34,6 +36,6 @@ export function configure(config: OAuthConfig): void {
 /**
  * Get current configuration
  */
-export function getConfig(): Required<OAuthConfig> {
+export function getConfig(): Omit<Required<OAuthConfig>, 'storagePath'> & Pick<OAuthConfig, 'storagePath'> {
 	return globalConfig
 }
