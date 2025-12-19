@@ -131,6 +131,17 @@ export async function logout(token?: string): Promise<void> {
 	}
 }
 
+// Buffer time before expiration to trigger refresh (5 minutes)
+const REFRESH_BUFFER_MS = 5 * 60 * 1000
+
+/**
+ * Check if token is expired or about to expire
+ */
+function isTokenExpired(expiresAt?: number): boolean {
+	if (!expiresAt) return false // Can't determine, assume valid
+	return Date.now() >= expiresAt - REFRESH_BUFFER_MS
+}
+
 /**
  * Get token from environment or stored credentials
  *
@@ -138,7 +149,7 @@ export async function logout(token?: string): Promise<void> {
  * 1. globalThis.DO_ADMIN_TOKEN / DO_TOKEN (Workers legacy)
  * 2. process.env.DO_ADMIN_TOKEN / DO_TOKEN (Node.js)
  * 3. cloudflare:workers env import (Workers 2025+) - supports secrets store bindings
- * 4. Stored token (keychain/secure file)
+ * 4. Stored token (keychain/secure file) - with automatic refresh if expired
  *
  * @see https://developers.cloudflare.com/changelog/2025-03-17-importable-env/
  */
@@ -169,6 +180,51 @@ export async function getToken(): Promise<string | null> {
 		const { createSecureStorage } = await import('./storage.js')
 		const config = getConfig()
 		const storage = createSecureStorage(config.storagePath)
+
+		// Get full token data if available
+		const tokenData = storage.getTokenData ? await storage.getTokenData() : null
+
+		if (tokenData) {
+			// If token is not expired, return it
+			if (!isTokenExpired(tokenData.expiresAt)) {
+				return tokenData.accessToken
+			}
+
+			// Token is expired - try to refresh if we have a refresh token
+			if (tokenData.refreshToken) {
+				try {
+					const newTokens = await refreshAccessToken(tokenData.refreshToken)
+
+					// Calculate new expiration time
+					const expiresAt = newTokens.expires_in
+						? Date.now() + newTokens.expires_in * 1000
+						: undefined
+
+					// Store new token data
+					const newData: StoredTokenData = {
+						accessToken: newTokens.access_token,
+						refreshToken: newTokens.refresh_token || tokenData.refreshToken,
+						expiresAt,
+					}
+
+					if (storage.setTokenData) {
+						await storage.setTokenData(newData)
+					} else {
+						await storage.setToken(newTokens.access_token)
+					}
+
+					return newTokens.access_token
+				} catch {
+					// Refresh failed - return null (caller should re-authenticate)
+					return null
+				}
+			}
+
+			// Expired but no refresh token - return null
+			return null
+		}
+
+		// Fall back to simple token storage (no expiration tracking)
 		return await storage.getToken()
 	} catch {
 		// Storage not available (browser/worker) - return null
@@ -224,7 +280,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
 			grant_type: 'refresh_token',
 			refresh_token: refreshToken,
 			client_id: config.clientId,
-		}),
+		}).toString(),
 	})
 
 	if (!response.ok) {

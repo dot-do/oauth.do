@@ -1,6 +1,6 @@
 {
 	"name": "oauth.do",
-	"version": "0.1.13",
+	"version": "0.1.15",
 	"description": "OAuth authentication SDK and CLI for .do Platform",
 	"type": "module",
 	"main": "./dist/index.js",

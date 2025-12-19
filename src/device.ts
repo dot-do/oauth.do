@@ -43,7 +43,7 @@ export async function authorizeDevice(options: DeviceAuthOptions = {}): Promise<
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
 			},
-			body,
+			body: body.toString(),
 		})
 
 		if (!response.ok) {
@@ -101,7 +101,7 @@ export async function pollForTokens(
 					grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
 					device_code: deviceCode,
 					client_id: config.clientId,
-				}),
+				}).toString(),
 			})
 
 			if (response.ok) {

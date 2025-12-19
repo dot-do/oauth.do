@@ -59,68 +59,48 @@ export async function ensureLoggedIn(options: LoginOptions = {}): Promise<LoginR
 	const existingToken = tokenData?.accessToken || (await storage.getToken())
 
 	if (existingToken) {
-		// Check if token is expired
-		if (tokenData && isTokenExpired(tokenData.expiresAt)) {
-			// Try to refresh
-			if (tokenData.refreshToken) {
-				try {
-					const newTokens = await refreshAccessToken(tokenData.refreshToken)
+		// If we have expiration info and token is not expired, just return it
+		// No need for network validation - this function just provides tokens
+		if (tokenData?.expiresAt && !isTokenExpired(tokenData.expiresAt)) {
+			return { token: existingToken, isNewLogin: false }
+		}
 
-					// Calculate new expiration time
-					const expiresAt = newTokens.expires_in
-						? Date.now() + newTokens.expires_in * 1000
-						: undefined
+		// Token is expired or no expiration info - try to refresh
+		if (tokenData?.refreshToken) {
+			try {
+				const newTokens = await refreshAccessToken(tokenData.refreshToken)
 
-					// Store new token data
-					const newData: StoredTokenData = {
-						accessToken: newTokens.access_token,
-						refreshToken: newTokens.refresh_token || tokenData.refreshToken,
-						expiresAt,
-					}
+				// Calculate new expiration time
+				const expiresAt = newTokens.expires_in
+					? Date.now() + newTokens.expires_in * 1000
+					: undefined
 
-					if (storage.setTokenData) {
-						await storage.setTokenData(newData)
-					} else {
-						await storage.setToken(newTokens.access_token)
-					}
-
-					return { token: newTokens.access_token, isNewLogin: false }
-				} catch (error) {
-					// Refresh failed - might need to re-login
-					console.warn('Token refresh failed:', error)
-					// Fall through to device flow
+				// Store new token data
+				const newData: StoredTokenData = {
+					accessToken: newTokens.access_token,
+					refreshToken: newTokens.refresh_token || tokenData.refreshToken,
+					expiresAt,
 				}
+
+				if (storage.setTokenData) {
+					await storage.setTokenData(newData)
+				} else {
+					await storage.setToken(newTokens.access_token)
+				}
+
+				return { token: newTokens.access_token, isNewLogin: false }
+			} catch (error) {
+				// Refresh failed - might need to re-login
+				console.warn('Token refresh failed:', error)
+				// Fall through to device flow
 			}
-		} else {
-			// Token exists and not expired - validate it
+		}
+
+		// No expiration info and no refresh token - validate with network call
+		if (!tokenData?.expiresAt && !tokenData?.refreshToken) {
 			const { user } = await getUser(existingToken)
 			if (user) {
 				return { token: existingToken, isNewLogin: false }
-			}
-			// Token invalid - try refresh if available
-			if (tokenData?.refreshToken) {
-				try {
-					const newTokens = await refreshAccessToken(tokenData.refreshToken)
-					const expiresAt = newTokens.expires_in
-						? Date.now() + newTokens.expires_in * 1000
-						: undefined
-
-					const newData: StoredTokenData = {
-						accessToken: newTokens.access_token,
-						refreshToken: newTokens.refresh_token || tokenData.refreshToken,
-						expiresAt,
-					}
-
-					if (storage.setTokenData) {
-						await storage.setTokenData(newData)
-					} else {
-						await storage.setToken(newTokens.access_token)
-					}
-
-					return { token: newTokens.access_token, isNewLogin: false }
-				} catch {
-					// Refresh failed - need to re-login
-				}
 			}
 		}
 	}
