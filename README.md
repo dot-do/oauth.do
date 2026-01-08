@@ -1,6 +1,6 @@
 # oauth.do
 
-OAuth authentication SDK and CLI for .do Platform.
+OAuth authentication SDK and CLI for org.ai identity.
 
 ## Install
 
@@ -56,7 +56,7 @@ const url = buildAuthUrl({
 For building CLIs that need authentication:
 
 ```typescript
-import { ensureLoggedIn } from 'oauth.do'
+import { ensureLoggedIn } from 'oauth.do/node'
 
 // Get token (prompts login if needed, auto-opens browser)
 const { token, isNewLogin } = await ensureLoggedIn()
@@ -82,9 +82,9 @@ const tokens = await pollForTokens(auth.device_code, auth.interval, auth.expires
 ## Token Storage
 
 ```typescript
-import { createSecureStorage, KeychainTokenStorage } from 'oauth.do'
+import { createSecureStorage, KeychainTokenStorage } from 'oauth.do/node'
 
-// Auto-select best storage (keychain → secure file)
+// Auto-select best storage (keychain -> secure file)
 const storage = createSecureStorage()
 
 // Or use keychain directly
@@ -114,7 +114,7 @@ configure({
 
 ## Environment Variables
 
-- `DO_TOKEN` - Authentication token
+- `ORG_AI_TOKEN` - Authentication token
 - `OAUTH_API_URL` - API base URL (default: `https://apis.do`)
 - `OAUTH_CLIENT_ID` - OAuth client ID
 - `OAUTH_AUTHKIT_DOMAIN` - AuthKit domain (default: `login.oauth.do`)

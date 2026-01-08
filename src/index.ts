@@ -1,8 +1,8 @@
 /**
- * oauth.do - OAuth authentication SDK and CLI for .do Platform
+ * oauth.do - Simple, secure authentication for humans and AI agents
  *
- * This is the browser-safe entry point.
- * For CLI utilities that open the browser, import from 'oauth.do/cli'
+ * This is the browser-safe entry point with universal functions.
+ * For Node.js CLI utilities that open the browser, import from 'oauth.do/node'
  *
  * @packageDocumentation
  */

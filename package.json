@@ -1,7 +1,7 @@
 {
 	"name": "oauth.do",
-	"version": "0.1.15",
-	"description": "OAuth authentication SDK and CLI for .do Platform",
+	"version": "0.1.17",
+	"description": "OAuth authentication SDK and CLI for org.ai identity",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -42,16 +42,15 @@
 		"authentication",
 		"auth",
 		"login",
-		"api-key",
+		"identity",
 		"cli",
 		"sdk",
-		"platform",
-		"workos"
+		"org-ai"
 	],
 	"author": {
-		"name": "Platform.do",
-		"email": "npm@platform.do",
-		"url": "https://platform.do"
+		"name": "org.ai",
+		"email": "npm@org.ai",
+		"url": "https://org.ai"
 	},
 	"license": "MIT",
 	"repository": {
