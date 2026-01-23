@@ -8,8 +8,14 @@
  */
 
 import type { Context, MiddlewareHandler } from 'hono'
+import { getCookie } from 'hono/cookie'
 import type { JWTPayload } from 'jose'
 import * as jose from 'jose'
+
+// Cloudflare Workers Cache API type
+declare const caches: {
+  default: Cache
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -144,7 +150,7 @@ function extractToken(c: Context, cookieName: string, headerName: string): strin
   }
 
   // Try cookie
-  const cookie = c.req.cookie(cookieName)
+  const cookie = getCookie(c, cookieName)
   if (cookie) return cookie
 
   return null

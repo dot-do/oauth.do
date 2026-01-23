@@ -12,16 +12,60 @@
 import {
   WorkOsWidgets,
   ApiKeys as WorkOSApiKeys,
-  UserManagement as WorkOSUserManagement,
-  UserProfile as WorkOSUserProfile,
-  type AuthToken
+  UsersManagement as WorkOSUsersManagement,
+  UserProfile as WorkOSUserProfile
 } from '@workos-inc/widgets'
 import {
   AuthKitProvider as WorkOSAuthKitProvider,
   useAuth as useWorkOSAuth,
-  type AuthKitProviderProps
+  type Impersonator,
+  type User,
+  type AuthenticationMethod
 } from '@workos-inc/authkit-react'
+
+/**
+ * Auth token can be a string or a function that returns a Promise<string>
+ */
+export type AuthToken = string | (() => Promise<string>)
 import React, { createContext, useContext, type ReactNode } from 'react'
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Auth Types (re-exported from authkit-react context)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Options for switching organization
+ */
+export interface SwitchToOrganizationOptions {
+  organizationId: string
+  signInOpts?: {
+    screenHint?: 'sign-in' | 'sign-up'
+    loginHint?: string
+  }
+}
+
+/**
+ * Auth state and methods returned by useAuth hook
+ */
+export interface AuthState {
+  isLoading: boolean
+  user: User | null
+  role: string | null
+  roles: string[] | null
+  organizationId: string | null
+  permissions: string[]
+  featureFlags: string[]
+  impersonator: Impersonator | null
+  authenticationMethod: AuthenticationMethod | null
+  signIn: () => void
+  signUp: () => void
+  getUser: () => User | null
+  getAccessToken: () => Promise<string>
+  signOut: () => void
+  switchToOrganization: (options: SwitchToOrganizationOptions) => Promise<void>
+  getSignInUrl: () => Promise<string>
+  getSignUpUrl: () => Promise<string>
+}
 
 // oauth.do default configuration
 const OAUTH_DO_CONFIG = {
@@ -58,8 +102,6 @@ export interface OAuthDoProviderProps {
   apiUrl?: string
   /** Override the AuthKit domain */
   authKitDomain?: string
-  /** Initial auth state from server (for SSR hydration) */
-  initialAuth?: AuthKitProviderProps['initialAuth']
 }
 
 /**
@@ -83,16 +125,12 @@ export function OAuthDoProvider({
   clientId = OAUTH_DO_CONFIG.clientId,
   apiUrl = OAUTH_DO_CONFIG.apiUrl,
   authKitDomain = OAUTH_DO_CONFIG.authKitDomain,
-  initialAuth,
 }: OAuthDoProviderProps): JSX.Element {
   const config = { clientId, apiUrl, authKitDomain }
 
   return (
     <OAuthDoContext.Provider value={config}>
-      <WorkOSAuthKitProvider
-        clientId={clientId}
-        initialAuth={initialAuth}
-      >
+      <WorkOSAuthKitProvider clientId={clientId}>
         <WorkOsWidgets>
           {children}
         </WorkOsWidgets>
@@ -122,8 +160,8 @@ export function OAuthDoProvider({
  * }
  * ```
  */
-export function useAuth() {
-  return useWorkOSAuth()
+export function useAuth(): AuthState {
+  return useWorkOSAuth() as AuthState
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -156,28 +194,28 @@ export function ApiKeys({ authToken }: ApiKeysProps): JSX.Element {
   return <WorkOSApiKeys authToken={authToken} />
 }
 
-export interface UserManagementProps {
+export interface UsersManagementProps {
   /** Auth token for the widget */
   authToken: AuthToken
 }
 
 /**
- * User Management Widget - invite, remove, and manage users
+ * Users Management Widget - invite, remove, and manage users
  *
  * @example
  * ```tsx
- * import { UserManagement, useAuth } from 'oauth.do/react'
+ * import { UsersManagement, useAuth } from 'oauth.do/react'
  *
  * function UsersPage() {
  *   const { user, getAccessToken } = useAuth()
  *   if (!user) return <p>Please sign in</p>
  *
- *   return <UserManagement authToken={getAccessToken} />
+ *   return <UsersManagement authToken={getAccessToken} />
  * }
  * ```
  */
-export function UserManagement({ authToken }: UserManagementProps): JSX.Element {
-  return <WorkOSUserManagement authToken={authToken} />
+export function UsersManagement({ authToken }: UsersManagementProps): JSX.Element {
+  return <WorkOSUsersManagement authToken={authToken} />
 }
 
 export interface UserProfileProps {
@@ -291,4 +329,4 @@ export function SignOutButton({
 // Re-exports
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type { AuthToken }
+export type { User, Impersonator, AuthenticationMethod }
