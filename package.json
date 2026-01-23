@@ -1,12 +1,13 @@
 {
 	"name": "oauth.do",
-	"version": "0.1.17",
-	"description": "OAuth authentication SDK and CLI for org.ai identity",
+	"version": "0.2.0",
+	"description": "OAuth authentication SDK, React components, and Hono middleware for org.ai identity",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"bin": {
-		"oauth.do": "./dist/cli.js"
+		"oauth.do": "./dist/cli.js",
+		"duckdb-auth": "./bin/duckdb-auth"
 	},
 	"exports": {
 		".": {
@@ -21,10 +22,23 @@
 			"require": "./dist/node.js",
 			"default": "./dist/node.js"
 		},
+		"./react": {
+			"types": "./dist/react.d.ts",
+			"import": "./dist/react.js",
+			"require": "./dist/react.js",
+			"default": "./dist/react.js"
+		},
+		"./hono": {
+			"types": "./dist/hono.d.ts",
+			"import": "./dist/hono.js",
+			"require": "./dist/hono.js",
+			"default": "./dist/hono.js"
+		},
 		"./mdx/*": "./src/mdx/*"
 	},
 	"files": [
 		"dist",
+		"bin",
 		"src/mdx",
 		"README.md",
 		"LICENSE"
@@ -45,7 +59,11 @@
 		"identity",
 		"cli",
 		"sdk",
-		"org-ai"
+		"org-ai",
+		"workos",
+		"authkit",
+		"react",
+		"hono"
 	],
 	"author": {
 		"name": "org.ai",
@@ -70,8 +88,54 @@
 	"optionalDependencies": {
 		"keytar": "^7.9.0"
 	},
+	"peerDependencies": {
+		"@radix-ui/themes": ">=3.0.0",
+		"@tanstack/react-query": ">=5.0.0",
+		"@workos-inc/authkit-react": ">=1.0.0",
+		"@workos-inc/widgets": ">=1.0.0",
+		"hono": ">=4.0.0",
+		"jose": ">=5.0.0",
+		"react": ">=18.0.0",
+		"react-dom": ">=18.0.0"
+	},
+	"peerDependenciesMeta": {
+		"@radix-ui/themes": {
+			"optional": true
+		},
+		"@tanstack/react-query": {
+			"optional": true
+		},
+		"@workos-inc/authkit-react": {
+			"optional": true
+		},
+		"@workos-inc/widgets": {
+			"optional": true
+		},
+		"hono": {
+			"optional": true
+		},
+		"jose": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		},
+		"react-dom": {
+			"optional": true
+		}
+	},
 	"devDependencies": {
+		"@radix-ui/themes": "^3.0.0",
+		"@tanstack/react-query": "^5.0.0",
 		"@types/node": "^24.10.1",
+		"@types/react": "^18.2.0",
+		"@types/react-dom": "^18.2.0",
+		"@workos-inc/authkit-react": "^1.0.0",
+		"@workos-inc/widgets": "^1.0.0",
+		"hono": "^4.0.0",
+		"jose": "^5.0.0",
+		"react": "^18.2.0",
+		"react-dom": "^18.2.0",
 		"tsup": "^8.0.0",
 		"typescript": "^5.5.2",
 		"vitest": "^2.1.8"

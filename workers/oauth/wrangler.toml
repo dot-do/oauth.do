@@ -1,0 +1,17 @@
+name = "oauth"
+main = "index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+WORKOS_CLIENT_ID = "client_01JQYTRXK9ZPD8JPJTKDCRB656"
+REDIRECT_URI = "https://oauth.do/callback"
+ALLOWED_ORIGINS = "https://oauth.do,https://ducktail.do,https://ducklytics.do"
+
+# Secrets (set via wrangler secret put):
+# - WORKOS_API_KEY
+# - WORKOS_COOKIE_PASSWORD
+
+# KV for state storage
+[[kv_namespaces]]
+binding = "OAUTH_STATE"
+id = "placeholder" # Replace with actual KV namespace ID

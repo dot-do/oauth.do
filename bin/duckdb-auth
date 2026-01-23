@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+#
+# duckdb-auth - DuckDB with oauth.do authentication
+#
+# This wrapper script gets an OAuth token from oauth.do and
+# configures DuckDB to use it for authenticated HTTP requests.
+#
+# Usage:
+#   duckdb-auth [duckdb-args...]
+#   duckdb-auth mydata.db
+#   duckdb-auth -c "SELECT * FROM read_json('https://api.example.com/data')"
+#
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Check if oauth.do CLI is available
+if ! command -v oauth.do &> /dev/null; then
+    echo -e "${RED}Error: oauth.do CLI not found${NC}"
+    echo "Install with: npm install -g oauth.do"
+    exit 1
+fi
+
+# Check if duckdb is available
+if ! command -v duckdb &> /dev/null; then
+    echo -e "${RED}Error: duckdb CLI not found${NC}"
+    echo "Install from: https://duckdb.org/docs/installation/"
+    exit 1
+fi
+
+# Get OAuth token
+TOKEN=$(oauth.do token 2>/dev/null || echo "")
+
+if [ -z "$TOKEN" ]; then
+    echo -e "${YELLOW}Not logged in to oauth.do${NC}"
+    echo "Starting login flow..."
+    oauth.do login
+    TOKEN=$(oauth.do token 2>/dev/null || echo "")
+
+    if [ -z "$TOKEN" ]; then
+        echo -e "${RED}Failed to get token after login${NC}"
+        exit 1
+    fi
+fi
+
+echo -e "${GREEN}✓ Authenticated with oauth.do${NC}"
+
+# Create init SQL to set up secrets
+INIT_SQL="
+-- oauth.do authentication setup
+CREATE OR REPLACE SECRET oauth_do (
+    TYPE http,
+    BEARER_TOKEN '${TOKEN}'
+);
+
+-- Also create with extra headers for flexibility
+CREATE OR REPLACE SECRET oauth_do_headers (
+    TYPE HTTP,
+    EXTRA_HTTP_HEADERS MAP {
+        'Authorization': 'Bearer ${TOKEN}'
+    }
+);
+"
+
+# Run DuckDB with init command
+exec duckdb -cmd "$INIT_SQL" "$@"
