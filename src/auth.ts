@@ -1,4 +1,5 @@
 import { getConfig } from './config.js'
+import { getEnv } from './utils.js'
 import type { User, AuthResult, TokenResponse, StoredTokenData } from './types.js'
 
 /**
@@ -13,17 +14,6 @@ async function resolveSecret(value: unknown): Promise<string | null> {
 		return await (value as any).get()
 	}
 	return null
-}
-
-/**
- * Safe environment variable access (works in Node, browser, and Workers)
- */
-function getEnv(key: string): string | undefined {
-	// Check globalThis first (Workers)
-	if ((globalThis as any)[key]) return (globalThis as any)[key]
-	// Check process.env (Node.js)
-	if (typeof process !== 'undefined' && process.env?.[key]) return process.env[key]
-	return undefined
 }
 
 /**

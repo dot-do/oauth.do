@@ -7,10 +7,11 @@ export default defineConfig({
 		'src/cli.ts',
 		'src/react.tsx',
 		'src/hono.ts',
+		'src/types-export.ts',
 	],
 	format: ['esm'],
 	dts: {
-		entry: ['src/index.ts', 'src/node.ts', 'src/react.tsx', 'src/hono.ts'],
+		entry: ['src/index.ts', 'src/node.ts', 'src/react.tsx', 'src/hono.ts', 'src/types-export.ts'],
 	},
 	splitting: false,
 	sourcemap: true,

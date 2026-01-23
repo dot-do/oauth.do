@@ -1,4 +1,5 @@
 import type { TokenStorage, StoredTokenData } from './types.js'
+import { getEnv } from './utils.js'
 
 // Keychain service and account identifiers
 const KEYCHAIN_SERVICE = 'oauth.do'
@@ -11,14 +12,6 @@ function isNode(): boolean {
 	return typeof process !== 'undefined' &&
 		process.versions != null &&
 		process.versions.node != null
-}
-
-/**
- * Safe environment variable access
- */
-function getEnv(key: string): string | undefined {
-	if (typeof process !== 'undefined' && process.env?.[key]) return process.env[key]
-	return undefined
 }
 
 /**

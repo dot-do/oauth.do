@@ -1,11 +1,45 @@
 # oauth.do
 
-OAuth authentication SDK and CLI for org.ai identity.
+[![npm version](https://img.shields.io/npm/v/oauth.do.svg)](https://www.npmjs.com/package/oauth.do)
+[![license](https://img.shields.io/npm/l/oauth.do.svg)](https://github.com/dot-do/oauth.do/blob/main/LICENSE)
+[![tests](https://img.shields.io/github/actions/workflow/status/dot-do/oauth.do/test.yml?label=tests)](https://github.com/dot-do/oauth.do/actions)
 
-## Install
+OAuth authentication SDK and CLI for the .do Platform, wrapping [WorkOS AuthKit](https://workos.com/authkit) with pre-configured defaults and multiple entry points for different environments.
+
+**Why oauth.do?**
+- Pre-configured AuthKit settings for .do Platform - works out of the box
+- Multiple entry points: SDK, CLI, React components, Hono middleware
+- Built-in secure token storage with OS keychain support
+- GitHub Device Flow for CLI tools and headless environments
+
+```typescript
+import { auth } from 'oauth.do'
+
+const { user, token } = await auth()
+console.log(`Hello, ${user.firstName}!`)
+```
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18.0.0 or higher
+- WorkOS account (optional - for custom AuthKit configuration)
+
+### Installation
 
 ```bash
+# npm
 npm install oauth.do
+
+# pnpm
+pnpm add oauth.do
+
+# yarn
+yarn add oauth.do
+
+# bun
+bun add oauth.do
 ```
 
 ## CLI
@@ -78,6 +112,86 @@ console.log('Code:', auth.user_code)
 
 const tokens = await pollForTokens(auth.device_code, auth.interval, auth.expires_in)
 ```
+
+## GitHub Device Flow
+
+For CLI tools and headless environments that need GitHub authentication without a browser callback.
+
+```typescript
+import { startGitHubDeviceFlow, pollGitHubDeviceFlow, getGitHubUser } from 'oauth.do'
+
+// Step 1: Start the device flow
+const auth = await startGitHubDeviceFlow({
+  clientId: 'Ov23liABCDEFGHIJKLMN',
+  scope: 'user:email read:user'  // optional, this is the default
+})
+
+console.log(`Visit ${auth.verificationUri} and enter code: ${auth.userCode}`)
+
+// Step 2: Poll for token (blocks until user completes authorization)
+const token = await pollGitHubDeviceFlow(auth.deviceCode, {
+  clientId: 'Ov23liABCDEFGHIJKLMN',
+  interval: auth.interval,
+  expiresIn: auth.expiresIn
+})
+
+// Step 3: Get user information
+const user = await getGitHubUser(token.accessToken)
+console.log(`Logged in as ${user.login} (ID: ${user.id})`)
+```
+
+### GitHub Device Flow API
+
+#### `startGitHubDeviceFlow(options)`
+
+Initiates the device authorization flow by requesting device and user codes.
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `clientId` | `string` | Yes | GitHub OAuth App client ID |
+| `scope` | `string` | No | OAuth scopes (default: `'user:email read:user'`) |
+| `fetch` | `typeof fetch` | No | Custom fetch implementation |
+
+Returns `GitHubDeviceAuthResponse` with `deviceCode`, `userCode`, `verificationUri`, `expiresIn`, and `interval`.
+
+#### `pollGitHubDeviceFlow(deviceCode, options)`
+
+Polls GitHub's token endpoint until user completes authorization.
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `clientId` | `string` | Yes | GitHub OAuth App client ID |
+| `interval` | `number` | No | Polling interval in seconds (default: 5) |
+| `expiresIn` | `number` | No | Expiration time in seconds (default: 900) |
+| `fetch` | `typeof fetch` | No | Custom fetch implementation |
+
+Returns `GitHubTokenResponse` with `accessToken`, `tokenType`, and `scope`.
+
+#### `getGitHubUser(accessToken, options?)`
+
+Fetches the authenticated user's profile from GitHub API.
+
+Returns `GitHubUser` with `id`, `login`, `email`, `name`, and `avatarUrl`.
+
+## duckdb-auth Binary
+
+The `duckdb-auth` binary wraps DuckDB with automatic OAuth token injection for authenticated HTTP requests.
+
+```bash
+# Run DuckDB with oauth.do authentication
+duckdb-auth mydata.db
+
+# Execute authenticated queries
+duckdb-auth -c "SELECT * FROM read_json('https://api.example.com/protected/data')"
+```
+
+**How it works:**
+
+1. Retrieves your OAuth token from `oauth.do token`
+2. Creates DuckDB HTTP secrets with your bearer token
+3. Launches DuckDB with authentication pre-configured
+
+If you're not logged in, it will automatically start the login flow before launching DuckDB.
 
 ## React Components
 

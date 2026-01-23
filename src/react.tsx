@@ -309,11 +309,12 @@ export function SignOutButton({
   className,
   redirectTo = '/',
 }: SignOutButtonProps): JSX.Element {
-  const handleClick = async () => {
-    // Clear local storage/cookies
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('oauth.do:token')
-      document.cookie = 'auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
+  const { signOut } = useAuth()
+
+  const handleClick = () => {
+    signOut()
+    // Redirect after signOut if a custom redirectTo is provided
+    if (redirectTo !== '/' && typeof window !== 'undefined') {
       window.location.href = redirectTo
     }
   }

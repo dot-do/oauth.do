@@ -2,4 +2,5 @@
  * OAuth.do test setup
  */
 
-// Add any global test setup here
+// Add jest-dom matchers for React testing
+import '@testing-library/jest-dom'

@@ -11,7 +11,7 @@
  */
 
 import { authorizeDevice, pollForTokens } from './device.js'
-import { auth, logout as logoutFn } from './auth.js'
+import { getUser, logout as logoutFn } from './auth.js'
 import { createSecureStorage, SecureFileTokenStorage } from './storage.js'
 import { configure } from './config.js'
 
@@ -170,7 +170,7 @@ async function loginCommand() {
 		await storage.setToken(tokenResponse.access_token)
 
 		// Step 5: Get user info
-		const authResult = await auth(tokenResponse.access_token)
+		const authResult = await getUser(tokenResponse.access_token)
 
 		printSuccess('Login successful!')
 		if (authResult.user) {
@@ -234,7 +234,7 @@ async function whoamiCommand() {
 			return
 		}
 
-		const authResult = await auth(token)
+		const authResult = await getUser(token)
 
 		if (!authResult.user) {
 			console.log(`${colors.dim}Not authenticated${colors.reset}`)
@@ -301,7 +301,7 @@ async function statusCommand() {
 			return
 		}
 
-		const authResult = await auth(token)
+		const authResult = await getUser(token)
 		if (authResult.user) {
 			console.log(`\n${colors.cyan}Auth:${colors.reset} ${colors.green}Authenticated${colors.reset}`)
 			if (authResult.user.email) {
@@ -329,7 +329,7 @@ async function autoLoginOrShowUser() {
 
 		if (token) {
 			// Verify the token is still valid
-			const authResult = await auth(token)
+			const authResult = await getUser(token)
 
 			if (authResult.user) {
 				// Already logged in - show user info
