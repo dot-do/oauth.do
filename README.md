@@ -56,13 +56,10 @@ npx oauth.do status    # Show auth status
 ## SDK
 
 ```typescript
-import { auth, login, logout, getToken, isAuthenticated } from 'oauth.do'
+import { auth, logout, getToken, isAuthenticated } from 'oauth.do'
 
 // Check authentication
 const { user, token } = await auth()
-
-// Login
-const result = await login({ email: '...', password: '...' })
 
 // Logout
 await logout(token)
@@ -307,7 +304,7 @@ app.use('/api/*', combined({
 ## Token Storage
 
 ```typescript
-import { createSecureStorage, KeychainTokenStorage } from 'oauth.do/node'
+import { createSecureStorage, KeychainTokenStorage } from 'oauth.do'
 
 // Auto-select best storage (keychain -> secure file)
 const storage = createSecureStorage()
