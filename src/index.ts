@@ -26,12 +26,15 @@ export type {
 	GitHubUser,
 } from './github-device.js'
 
-// Storage utilities (browser-safe only)
+// Storage utilities
 export {
 	FileTokenStorage,
+	SecureFileTokenStorage,
+	KeychainTokenStorage,
 	MemoryTokenStorage,
 	LocalStorageTokenStorage,
 	CompositeTokenStorage,
+	createSecureStorage,
 } from './storage.js'
 
 // Types
