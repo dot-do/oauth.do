@@ -17,6 +17,10 @@ export interface OAuthUser {
   name?: string
   /** Organization/tenant the user belongs to */
   organizationId?: string
+  /** Upstream auth provider (e.g., 'workos', 'google', 'github') */
+  provider?: string
+  /** User's ID in the upstream provider */
+  providerId?: string
   /** User roles for RBAC */
   roles?: string[]
   /** User permissions for fine-grained access */
@@ -41,6 +45,8 @@ export interface OAuthOrganization {
   name: string
   /** Organization slug (URL-safe identifier) */
   slug?: string
+  /** Verified email domains for the organization */
+  domains?: string[]
   /** Organization metadata */
   metadata?: Record<string, unknown>
   /** When the organization was created */

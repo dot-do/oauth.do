@@ -54,6 +54,11 @@ export interface OAuthStorage {
   getUserByEmail(email: string): Promise<OAuthUser | null>
 
   /**
+   * Get a user by upstream provider identity
+   */
+  getUserByProvider(provider: string, providerId: string): Promise<OAuthUser | null>
+
+  /**
    * Save a user (create or update)
    */
   saveUser(user: OAuthUser): Promise<void>
@@ -81,6 +86,11 @@ export interface OAuthStorage {
    * Get an organization by slug
    */
   getOrganizationBySlug(slug: string): Promise<OAuthOrganization | null>
+
+  /**
+   * Get an organization by verified domain
+   */
+  getOrganizationByDomain(domain: string): Promise<OAuthOrganization | null>
 
   /**
    * Save an organization (create or update)
@@ -223,8 +233,10 @@ export interface ListOptions {
 export class MemoryOAuthStorage implements OAuthStorage {
   private users = new Map<string, OAuthUser>()
   private usersByEmail = new Map<string, string>()
+  private usersByProvider = new Map<string, string>()
   private organizations = new Map<string, OAuthOrganization>()
   private organizationsBySlug = new Map<string, string>()
+  private organizationsByDomain = new Map<string, string>()
   private clients = new Map<string, OAuthClient>()
   private authCodes = new Map<string, OAuthAuthorizationCode>()
   private accessTokens = new Map<string, OAuthAccessToken>()
@@ -241,10 +253,18 @@ export class MemoryOAuthStorage implements OAuthStorage {
     return id ? this.users.get(id) ?? null : null
   }
 
+  async getUserByProvider(provider: string, providerId: string): Promise<OAuthUser | null> {
+    const id = this.usersByProvider.get(`${provider}:${providerId}`)
+    return id ? this.users.get(id) ?? null : null
+  }
+
   async saveUser(user: OAuthUser): Promise<void> {
     this.users.set(user.id, user)
     if (user.email) {
       this.usersByEmail.set(user.email.toLowerCase(), user.id)
+    }
+    if (user.provider && user.providerId) {
+      this.usersByProvider.set(`${user.provider}:${user.providerId}`, user.id)
     }
   }
 
@@ -252,6 +272,9 @@ export class MemoryOAuthStorage implements OAuthStorage {
     const user = this.users.get(id)
     if (user?.email) {
       this.usersByEmail.delete(user.email.toLowerCase())
+    }
+    if (user?.provider && user?.providerId) {
+      this.usersByProvider.delete(`${user.provider}:${user.providerId}`)
     }
     this.users.delete(id)
   }
@@ -277,10 +300,20 @@ export class MemoryOAuthStorage implements OAuthStorage {
     return id ? this.organizations.get(id) ?? null : null
   }
 
+  async getOrganizationByDomain(domain: string): Promise<OAuthOrganization | null> {
+    const id = this.organizationsByDomain.get(domain.toLowerCase())
+    return id ? this.organizations.get(id) ?? null : null
+  }
+
   async saveOrganization(org: OAuthOrganization): Promise<void> {
     this.organizations.set(org.id, org)
     if (org.slug) {
       this.organizationsBySlug.set(org.slug.toLowerCase(), org.id)
+    }
+    if (org.domains) {
+      for (const domain of org.domains) {
+        this.organizationsByDomain.set(domain.toLowerCase(), org.id)
+      }
     }
   }
 
@@ -288,6 +321,11 @@ export class MemoryOAuthStorage implements OAuthStorage {
     const org = this.organizations.get(id)
     if (org?.slug) {
       this.organizationsBySlug.delete(org.slug.toLowerCase())
+    }
+    if (org?.domains) {
+      for (const domain of org.domains) {
+        this.organizationsByDomain.delete(domain.toLowerCase())
+      }
     }
     this.organizations.delete(id)
   }

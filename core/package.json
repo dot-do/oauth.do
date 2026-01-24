@@ -1,6 +1,6 @@
 {
   "name": "@dotdo/oauth",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OAuth 2.1 server implementation for MCP - the leaf package with zero dependencies on @dotdo/do or oauth.do",
   "type": "module",
   "main": "./dist/index.js",
