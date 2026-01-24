@@ -19,6 +19,20 @@ const { user, token } = await auth()
 console.log(`Hello, ${user.firstName}!`)
 ```
 
+## Entry Points
+
+oauth.do provides multiple entry points for different environments:
+
+| Import | Environment | Description |
+|--------|-------------|-------------|
+| `oauth.do` | Universal | Core auth functions (browser, Workers, Node.js) |
+| `oauth.do/node` | Node.js only | CLI helpers with keychain storage (uses `keytar`) |
+| `oauth.do/react` | React | React components and hooks |
+| `oauth.do/hono` | Hono/Workers | Cloudflare Workers middleware |
+| `oauth.do/session` | Universal | Session management utilities |
+
+**Important for Cloudflare Workers:** Import from the main `oauth.do` path or `oauth.do/hono`. The `/node` subpath uses native modules (`keytar`) that won't bundle for Workers.
+
 ## Getting Started
 
 ### Prerequisites
