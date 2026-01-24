@@ -148,17 +148,23 @@ const valid = await verifyCodeChallenge(verifier, challenge, 'S256')
 
 ## Architecture
 
-This package is designed as the **leaf** in the dependency tree:
+This package is the **leaf** in the dependency chain:
 
 ```
-@dotdo/oauth (this package - no deps on oauth.do or @dotdo/do)
-     ↑
-oauth.do (depends on @dotdo/oauth)
-     ↑
-@dotdo/do (depends on oauth.do, provides DOAuthStorage)
+@dotdo/oauth (this package - pure OAuth 2.1, storage interface)
+     ↓
+@dotdo/do (depends on @dotdo/oauth, implements DOAuthStorage)
+     ↓
+oauth.do (depends on @dotdo/do for storage)
+     ↓
+dotdo (depends on oauth.do for auth)
 ```
 
-This breaks the circular dependency that would otherwise exist between oauth.do (needs storage) and @dotdo/do (needs auth).
+Each layer adds capabilities:
+- **@dotdo/oauth** - OAuth 2.1 primitives, abstract storage interface
+- **@dotdo/do** - Concrete storage using Durable Object SQLite
+- **oauth.do** - High-level auth SDK with session management
+- **dotdo** - Full framework with auth built-in
 
 ## License
 
