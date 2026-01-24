@@ -15,3 +15,10 @@ export * from './index.js'
 // Export login utilities that use the 'open' package
 export { ensureLoggedIn, forceLogin, ensureLoggedOut } from './login.js'
 export type { LoginOptions, LoginResult, OAuthProvider } from './login.js'
+
+// Node.js-only storage (uses keytar for OS keychain)
+export {
+	KeychainTokenStorage,
+	SecureFileTokenStorage,
+	createSecureStorage,
+} from './storage.js'

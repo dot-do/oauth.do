@@ -26,15 +26,12 @@ export type {
 	GitHubUser,
 } from './github-device.js'
 
-// Storage utilities (browser-safe - uses dynamic imports for Node.js features)
+// Storage utilities (browser-safe only)
 export {
 	FileTokenStorage,
 	MemoryTokenStorage,
 	LocalStorageTokenStorage,
-	SecureFileTokenStorage,
-	KeychainTokenStorage,
 	CompositeTokenStorage,
-	createSecureStorage,
 } from './storage.js'
 
 // Types

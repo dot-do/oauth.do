@@ -1,154 +1,152 @@
 {
-	"name": "oauth.do",
-	"version": "0.2.1",
-	"description": "OAuth authentication SDK, React components, and Hono middleware for org.ai identity",
-	"type": "module",
-	"main": "./dist/index.js",
-	"types": "./dist/index.d.ts",
-	"bin": {
-		"oauth.do": "./dist/cli.js",
-		"duckdb-auth": "./bin/duckdb-auth"
-	},
-	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js",
-			"require": "./dist/index.js",
-			"default": "./dist/index.js"
-		},
-		"./node": {
-			"types": "./dist/node.d.ts",
-			"import": "./dist/node.js",
-			"require": "./dist/node.js",
-			"default": "./dist/node.js"
-		},
-		"./react": {
-			"types": "./dist/react.d.ts",
-			"import": "./dist/react.js",
-			"require": "./dist/react.js",
-			"default": "./dist/react.js"
-		},
-		"./hono": {
-			"types": "./dist/hono.d.ts",
-			"import": "./dist/hono.js",
-			"require": "./dist/hono.js",
-			"default": "./dist/hono.js"
-		},
-		"./types": {
-			"types": "./dist/types-export.d.ts",
-			"import": "./dist/types-export.js"
-		},
-		"./session": {
-			"types": "./dist/session.d.ts",
-			"import": "./dist/session.js"
-		},
-		"./mdx/*": "./src/mdx/*"
-	},
-	"files": [
-		"dist",
-		"bin",
-		"src/mdx",
-		"README.md",
-		"LICENSE"
-	],
-	"scripts": {
-		"build": "tsup",
-		"dev": "tsup --watch",
-		"test": "vitest run",
-		"test:watch": "vitest",
-		"check:publish": "node -e \"const pkg = require('./package.json'); const deps = JSON.stringify(pkg.dependencies || {}); if (deps.includes('workspace:')) { console.error('ERROR: workspace: protocol found in dependencies. Replace with actual versions before publishing.'); process.exit(1); }\"",
-		"prepublishOnly": "pnpm check:publish && pnpm build && pnpm test"
-	},
-	"keywords": [
-		"oauth",
-		"authentication",
-		"auth",
-		"login",
-		"identity",
-		"cli",
-		"sdk",
-		"org-ai",
-		"workos",
-		"authkit",
-		"react",
-		"hono"
-	],
-	"author": {
-		"name": "org.ai",
-		"email": "npm@org.ai",
-		"url": "https://org.ai"
-	},
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/dot-do/oauth.do.git"
-	},
-	"bugs": {
-		"url": "https://github.com/dot-do/oauth.do/issues"
-	},
-	"homepage": "https://oauth.do",
-	"engines": {
-		"node": ">=18.0.0"
-	},
-	"dependencies": {
-		"open": "^10.1.0"
-	},
-	"optionalDependencies": {
-		"keytar": "^7.9.0"
-	},
-	"peerDependencies": {
-		"@radix-ui/themes": ">=3.0.0",
-		"@tanstack/react-query": ">=5.0.0",
-		"@workos-inc/authkit-react": ">=0.5.0",
-		"@workos-inc/widgets": ">=1.0.0",
-		"hono": ">=4.0.0",
-		"jose": ">=5.0.0",
-		"react": ">=18.0.0",
-		"react-dom": ">=18.0.0"
-	},
-	"peerDependenciesMeta": {
-		"@radix-ui/themes": {
-			"optional": true
-		},
-		"@tanstack/react-query": {
-			"optional": true
-		},
-		"@workos-inc/authkit-react": {
-			"optional": true
-		},
-		"@workos-inc/widgets": {
-			"optional": true
-		},
-		"hono": {
-			"optional": true
-		},
-		"jose": {
-			"optional": true
-		},
-		"react": {
-			"optional": true
-		},
-		"react-dom": {
-			"optional": true
-		}
-	},
-	"devDependencies": {
-		"@radix-ui/themes": "^3.0.0",
-		"@tanstack/react-query": "^5.0.0",
-		"@testing-library/jest-dom": "^6.9.1",
-		"@testing-library/react": "^16.3.2",
-		"@types/node": "^24.10.1",
-		"@types/react": "^18.2.0",
-		"@types/react-dom": "^18.2.0",
-		"@workos-inc/authkit-react": "^0.16.0",
-		"@workos-inc/widgets": "^1.0.0",
-		"hono": "^4.0.0",
-		"jose": "^5.0.0",
-		"jsdom": "^27.4.0",
-		"react": "^18.2.0",
-		"react-dom": "^18.2.0",
-		"tsup": "^8.0.0",
-		"typescript": "^5.5.2",
-		"vitest": "^2.1.8"
-	}
+  "name": "oauth.do",
+  "version": "0.2.2",
+  "description": "OAuth authentication SDK, React components, and Hono middleware for org.ai identity",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "oauth.do": "./dist/cli.js",
+    "duckdb-auth": "./bin/duckdb-auth"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js",
+      "require": "./dist/node.js",
+      "default": "./dist/node.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.js",
+      "default": "./dist/react.js"
+    },
+    "./hono": {
+      "types": "./dist/hono.d.ts",
+      "import": "./dist/hono.js",
+      "require": "./dist/hono.js",
+      "default": "./dist/hono.js"
+    },
+    "./types": {
+      "types": "./dist/types-export.d.ts",
+      "import": "./dist/types-export.js"
+    },
+    "./session": {
+      "types": "./dist/session.d.ts",
+      "import": "./dist/session.js"
+    },
+    "./mdx/*": "./src/mdx/*"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "src/mdx",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:publish": "node -e \"const pkg = require('./package.json'); const deps = JSON.stringify(pkg.dependencies || {}); if (deps.includes('workspace:')) { console.error('ERROR: workspace: protocol found in dependencies. Replace with actual versions before publishing.'); process.exit(1); }\"",
+    "prepublishOnly": "pnpm check:publish && pnpm build && pnpm test"
+  },
+  "keywords": [
+    "oauth",
+    "authentication",
+    "auth",
+    "login",
+    "identity",
+    "cli",
+    "sdk",
+    "org-ai",
+    "workos",
+    "authkit",
+    "react",
+    "hono"
+  ],
+  "author": {
+    "name": "org.ai",
+    "email": "npm@org.ai",
+    "url": "https://org.ai"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dot-do/oauth.do.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dot-do/oauth.do/issues"
+  },
+  "homepage": "https://oauth.do",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "open": "^10.1.0",
+    "keytar": "^7.9.0"
+  },
+  "peerDependencies": {
+    "@radix-ui/themes": ">=3.0.0",
+    "@tanstack/react-query": ">=5.0.0",
+    "@workos-inc/authkit-react": ">=0.5.0",
+    "@workos-inc/widgets": ">=1.0.0",
+    "hono": ">=4.0.0",
+    "jose": ">=5.0.0",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@radix-ui/themes": {
+      "optional": true
+    },
+    "@tanstack/react-query": {
+      "optional": true
+    },
+    "@workos-inc/authkit-react": {
+      "optional": true
+    },
+    "@workos-inc/widgets": {
+      "optional": true
+    },
+    "hono": {
+      "optional": true
+    },
+    "jose": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@radix-ui/themes": "^3.0.0",
+    "@tanstack/react-query": "^5.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.10.1",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@workos-inc/authkit-react": "^0.16.0",
+    "@workos-inc/widgets": "^1.0.0",
+    "hono": "^4.0.0",
+    "jose": "^5.0.0",
+    "jsdom": "^27.4.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.2",
+    "vitest": "^2.1.8"
+  }
 }
