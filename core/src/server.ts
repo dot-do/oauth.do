@@ -17,7 +17,7 @@
 
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import type { OAuthStorage } from './storage'
+import type { OAuthStorage } from './storage.js'
 import type {
   OAuthServerMetadata,
   OAuthResourceMetadata,
@@ -26,21 +26,21 @@ import type {
   TokenResponse,
   OAuthError,
   UpstreamOAuthConfig,
-} from './types'
+} from './types.js'
 import {
   generateAuthorizationCode,
   generateToken,
   generateState,
   verifyCodeChallenge,
   hashClientSecret,
-} from './pkce'
+} from './pkce.js'
 import {
   type DevModeConfig,
   type DevUser,
   type TestHelpers,
   createTestHelpers,
   generateLoginFormHtml,
-} from './dev'
+} from './dev.js'
 
 /**
  * Configuration for the OAuth 2.1 server
@@ -962,3 +962,11 @@ async function handleRefreshTokenGrant(
 
   return c.json(response)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// JWT Verification Re-exports
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Re-export JWT verification utilities for downstream consumers
+export { verifyJWT, decodeJWT, isJWTExpired, clearJWKSCache } from './jwt.js'
+export type { JWTVerifyResult, JWTVerifyOptions, JWTPayload, JWTHeader } from './jwt.js'

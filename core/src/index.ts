@@ -41,16 +41,16 @@
  */
 
 // Server
-export { createOAuth21Server } from './server'
-export type { OAuth21ServerConfig, OAuth21Server } from './server'
+export { createOAuth21Server } from './server.js'
+export type { OAuth21ServerConfig, OAuth21Server } from './server.js'
 
 // Dev Mode & Test Helpers
-export { createTestHelpers, generateLoginFormHtml } from './dev'
-export type { DevModeConfig, DevUser, TestHelpers } from './dev'
+export { createTestHelpers, generateLoginFormHtml } from './dev.js'
+export type { DevModeConfig, DevUser, TestHelpers } from './dev.js'
 
 // Storage
-export { MemoryOAuthStorage } from './storage'
-export type { OAuthStorage, ListOptions } from './storage'
+export { MemoryOAuthStorage } from './storage.js'
+export type { OAuthStorage, ListOptions } from './storage.js'
 
 // PKCE
 export {
@@ -66,7 +66,11 @@ export {
   base64UrlEncode,
   base64UrlDecode,
   constantTimeEqual,
-} from './pkce'
+} from './pkce.js'
+
+// JWT Verification
+export { verifyJWT, decodeJWT, isJWTExpired, clearJWKSCache } from './jwt.js'
+export type { JWTVerifyResult, JWTVerifyOptions, JWTHeader, JWTPayload } from './jwt.js'
 
 // Types
 export type {
@@ -82,4 +86,4 @@ export type {
   TokenResponse,
   OAuthError,
   UpstreamOAuthConfig,
-} from './types'
+} from './types.js'
