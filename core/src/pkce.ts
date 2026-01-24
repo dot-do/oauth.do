@@ -21,12 +21,17 @@ export function generateCodeVerifier(length: number = 64): string {
   }
 
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'
-  const randomValues = new Uint8Array(length)
-  crypto.getRandomValues(randomValues)
+  // Use rejection sampling to avoid modulo bias
+  // For 66 chars, maxValid = 256 - (256 % 66) = 256 - 58 = 198
+  const maxValid = 256 - (256 % chars.length)
 
   let verifier = ''
   for (let i = 0; i < length; i++) {
-    verifier += chars[randomValues[i]! % chars.length]
+    let value: number
+    do {
+      value = crypto.getRandomValues(new Uint8Array(1))[0]!
+    } while (value >= maxValid)
+    verifier += chars[value % chars.length]
   }
 
   return verifier
@@ -138,6 +143,33 @@ export function constantTimeEqual(a: string, b: string): boolean {
   return result === 0
 }
 
+/** Alphanumeric characters for token/state generation */
+const ALPHANUMERIC_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+
+/**
+ * Generate a cryptographically random string from a given charset
+ * Uses rejection sampling to avoid modulo bias.
+ *
+ * @param length - Length of the string
+ * @param charset - Characters to use for generation
+ * @returns Random string
+ */
+function generateRandomString(length: number, charset: string): string {
+  // Use rejection sampling to avoid modulo bias
+  const maxValid = 256 - (256 % charset.length)
+
+  let result = ''
+  for (let i = 0; i < length; i++) {
+    let value: number
+    do {
+      value = crypto.getRandomValues(new Uint8Array(1))[0]!
+    } while (value >= maxValid)
+    result += charset[value % charset.length]
+  }
+
+  return result
+}
+
 /**
  * Generate a random state parameter for CSRF protection
  *
@@ -145,16 +177,7 @@ export function constantTimeEqual(a: string, b: string): boolean {
  * @returns Random state string
  */
 export function generateState(length: number = 32): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  const randomValues = new Uint8Array(length)
-  crypto.getRandomValues(randomValues)
-
-  let state = ''
-  for (let i = 0; i < length; i++) {
-    state += chars[randomValues[i]! % chars.length]
-  }
-
-  return state
+  return generateRandomString(length, ALPHANUMERIC_CHARS)
 }
 
 /**
@@ -164,16 +187,7 @@ export function generateState(length: number = 32): string {
  * @returns Random token string
  */
 export function generateToken(length: number = 32): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  const randomValues = new Uint8Array(length)
-  crypto.getRandomValues(randomValues)
-
-  let token = ''
-  for (let i = 0; i < length; i++) {
-    token += chars[randomValues[i]! % chars.length]
-  }
-
-  return token
+  return generateRandomString(length, ALPHANUMERIC_CHARS)
 }
 
 /**

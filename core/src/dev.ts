@@ -8,9 +8,9 @@
  * - Login form UI
  */
 
-import type { OAuthUser, OAuthAccessToken, OAuthRefreshToken } from './types'
-import type { OAuthStorage } from './storage'
-import { generateToken, generateAuthorizationCode } from './pkce'
+import type { OAuthUser, OAuthAccessToken, OAuthRefreshToken } from './types.js'
+import type { OAuthStorage } from './storage.js'
+import { generateToken, generateAuthorizationCode } from './pkce.js'
 
 /**
  * Test user configuration
@@ -32,9 +32,18 @@ export interface DevUser {
 
 /**
  * Development mode configuration
+ *
+ * @warning SECURITY: devMode should NEVER be enabled in production environments.
+ * It bypasses upstream OAuth providers and uses simple password authentication,
+ * which is insecure for production use. Only use for local development and testing.
  */
 export interface DevModeConfig {
-  /** Enable dev mode (disables upstream OAuth) */
+  /**
+   * Enable dev mode (disables upstream OAuth)
+   *
+   * @warning SECURITY: Never enable in production! This bypasses all upstream
+   * OAuth security and allows simple password-based authentication.
+   */
   enabled: boolean
   /** Pre-configured test users */
   users?: DevUser[]
@@ -113,9 +122,9 @@ export function createTestHelpers(
       const user: OAuthUser = {
         id: userData.id,
         email: userData.email,
-        name: userData.name,
-        organizationId: userData.organizationId,
-        roles: userData.roles,
+        ...(userData.name !== undefined && { name: userData.name }),
+        ...(userData.organizationId !== undefined && { organizationId: userData.organizationId }),
+        ...(userData.roles !== undefined && { roles: userData.roles }),
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }
@@ -192,7 +201,7 @@ export function createTestHelpers(
         clientId: params.clientId,
         userId: params.userId,
         redirectUri: params.redirectUri,
-        scope: params.scope,
+        ...(params.scope !== undefined && { scope: params.scope }),
         codeChallenge: params.codeChallenge,
         codeChallengeMethod: 'S256',
         issuedAt: Date.now(),
@@ -210,11 +219,12 @@ export function createTestHelpers(
 
       // If allowAnyCredentials is enabled, create a new user
       if (allowAnyCredentials) {
+        const namePart = email.split('@')[0]
         const newUser: DevUser = {
           id: `dev_${generateToken(12)}`,
           email,
           password,
-          name: email.split('@')[0],
+          ...(namePart && { name: namePart }),
         }
         devUsers.set(email.toLowerCase(), newUser)
         return newUser

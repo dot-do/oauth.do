@@ -9,18 +9,12 @@
 import { base64UrlDecode } from './pkce.js'
 
 /**
- * Result of JWT verification
+ * Result of JWT verification - discriminated union based on validity
  */
-export interface JWTVerifyResult {
-  /** Whether the token is valid */
-  valid: boolean
-  /** Decoded JWT payload (if valid) */
-  payload?: JWTPayload
-  /** Error message (if invalid) */
-  error?: string
-  /** JWT header */
-  header?: JWTHeader
-}
+export type JWTVerifyResult =
+  | { valid: true; payload: JWTPayload; header: JWTHeader; error?: undefined }
+  | { valid: false; error: string; payload?: undefined; header?: undefined }
+  | { valid: false; error: string; payload: JWTPayload; header: JWTHeader }
 
 /**
  * JWT Header
@@ -308,9 +302,16 @@ function isSupportedAlgorithm(alg: string): boolean {
 }
 
 /**
+ * Algorithm parameters for Web Crypto API
+ */
+type AlgorithmParams =
+  | { name: 'RSASSA-PKCS1-v1_5'; hash: string }
+  | { name: 'ECDSA'; hash: string; namedCurve: string }
+
+/**
  * Get algorithm parameters for Web Crypto API
  */
-function getAlgorithmParams(alg: string): { name: string; hash?: string; namedCurve?: string } {
+function getAlgorithmParams(alg: string): AlgorithmParams {
   switch (alg) {
     case 'RS256':
       return { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }

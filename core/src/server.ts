@@ -16,6 +16,7 @@
  */
 
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import { cors } from 'hono/cors'
 import type { OAuthStorage } from './storage.js'
 import type {
@@ -33,6 +34,7 @@ import {
   generateState,
   verifyCodeChallenge,
   hashClientSecret,
+  verifyClientSecret,
 } from './pkce.js'
 import {
   type DevModeConfig,
@@ -68,6 +70,8 @@ export interface OAuth21ServerConfig {
   onUserAuthenticated?: (user: OAuthUser) => void | Promise<void>
   /** Enable debug logging */
   debug?: boolean
+  /** Allowed CORS origins (default: issuer origin only in production, '*' in dev mode) */
+  allowedOrigins?: string[]
 }
 
 /**
@@ -130,11 +134,23 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     enableDynamicRegistration = true,
     onUserAuthenticated,
     debug = false,
+    allowedOrigins,
   } = config
 
   // Validate configuration
   if (!devMode?.enabled && !upstream) {
     throw new Error('Either upstream configuration or devMode must be provided')
+  }
+
+  // Security warning: devMode should never be used in production
+  // Use globalThis to access process in a way that works in all environments (Node, Deno, browsers)
+  const nodeEnv = (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env?.NODE_ENV
+  if (devMode?.enabled && nodeEnv === 'production') {
+    console.warn(
+      '[OAuth] WARNING: devMode is enabled in a production environment!\n' +
+      'This bypasses upstream OAuth security and allows simple password authentication.\n' +
+      'This is a critical security risk. Set devMode.enabled = false for production.'
+    )
   }
 
   const app = new Hono() as OAuth21Server
@@ -155,13 +171,27 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       accessTokenTtl,
       refreshTokenTtl,
       authCodeTtl,
-      allowAnyCredentials: devMode.allowAnyCredentials,
+      ...(devMode.allowAnyCredentials !== undefined && { allowAnyCredentials: devMode.allowAnyCredentials }),
     })
   }
 
-  // CORS for all endpoints
+  // CORS for all endpoints - restrictive by default
+  // In production, only allow issuer origin unless explicitly configured
+  // In dev mode, allow all origins if not specified
+  const corsOrigins = allowedOrigins ?? (devMode?.enabled ? ['*'] : [new URL(issuer).origin])
   app.use('*', cors({
-    origin: '*',
+    origin: (origin) => {
+      // If '*' is in the list, allow all origins
+      if (corsOrigins.includes('*')) {
+        return origin || '*'
+      }
+      // Otherwise, check if the origin is in the allowed list
+      if (origin && corsOrigins.includes(origin)) {
+        return origin
+      }
+      // Return null to deny the request
+      return null
+    },
     allowMethods: ['GET', 'POST', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
     exposeHeaders: ['WWW-Authenticate'],
@@ -179,7 +209,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       issuer,
       authorization_endpoint: `${issuer}/authorize`,
       token_endpoint: `${issuer}/token`,
-      registration_endpoint: enableDynamicRegistration ? `${issuer}/register` : undefined,
+      ...(enableDynamicRegistration && { registration_endpoint: `${issuer}/register` }),
       revocation_endpoint: `${issuer}/revoke`,
       scopes_supported: scopes,
       response_types_supported: ['code'],
@@ -226,14 +256,14 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
   app.get('/authorize', async (c) => {
     const params = c.req.query()
 
-    // Validate required parameters
-    const clientId = params.client_id
-    const redirectUri = params.redirect_uri
-    const responseType = params.response_type
-    const codeChallenge = params.code_challenge
-    const codeChallengeMethod = params.code_challenge_method
-    const scope = params.scope
-    const state = params.state
+    // Validate required parameters (bracket notation for index signature access)
+    const clientId = params['client_id']
+    const redirectUri = params['redirect_uri']
+    const responseType = params['response_type']
+    const codeChallenge = params['code_challenge']
+    const codeChallengeMethod = params['code_challenge_method']
+    const scope = params['scope']
+    const state = params['state']
 
     if (debug) {
       console.log('[OAuth] Authorize request:', { clientId, redirectUri, responseType, scope })
@@ -259,6 +289,13 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       return c.json({ error: 'invalid_request', error_description: 'redirect_uri is required' } as OAuthError, 400)
     }
 
+    // Validate redirect_uri is a valid URL
+    try {
+      new URL(redirectUri)
+    } catch {
+      return c.json({ error: 'invalid_request', error_description: 'redirect_uri must be a valid URL' } as OAuthError, 400)
+    }
+
     if (!client.redirectUris.includes(redirectUri)) {
       return c.json({ error: 'invalid_request', error_description: 'redirect_uri not registered for this client' } as OAuthError, 400)
     }
@@ -278,8 +315,8 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
         issuer,
         clientId,
         redirectUri,
-        scope,
-        state,
+        ...(scope !== undefined && { scope }),
+        ...(state !== undefined && { state }),
         codeChallenge,
         codeChallengeMethod,
       })
@@ -292,18 +329,22 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     }
 
     // Store the authorization request and redirect to upstream
+    // Generate a cryptographically secure state for CSRF protection with upstream provider
     const upstreamState = generateState(64)
 
     // Store pending auth as a temporary authorization code that will be replaced
+    // The upstreamState is stored both in the code key (for lookup) and as a separate field (for explicit validation)
+    // This provides defense-in-depth for CSRF protection
     await storage.saveAuthorizationCode({
       code: `pending:${upstreamState}`,
       clientId,
       userId: '', // Will be filled after upstream auth
       redirectUri,
-      scope,
+      ...(scope !== undefined && { scope }),
       codeChallenge,
       codeChallengeMethod: 'S256',
-      state,
+      ...(state !== undefined && { state }), // Client's state (will be passed back to client)
+      upstreamState, // Server's state for explicit validation in callback
       issuedAt: Date.now(),
       expiresAt: Date.now() + authCodeTtl * 1000,
     })
@@ -335,21 +376,24 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     }
 
     const formData = await c.req.parseBody()
-    const email = String(formData.email || '')
-    const password = String(formData.password || '')
-    const clientId = String(formData.client_id || '')
-    const redirectUri = String(formData.redirect_uri || '')
-    const scope = String(formData.scope || '')
-    const state = String(formData.state || '')
-    const codeChallenge = String(formData.code_challenge || '')
-    const codeChallengeMethod = String(formData.code_challenge_method || 'S256')
+    const email = String(formData['email'] || '')
+    const password = String(formData['password'] || '')
+    const clientId = String(formData['client_id'] || '')
+    const redirectUri = String(formData['redirect_uri'] || '')
+    const scope = String(formData['scope'] || '')
+    const state = String(formData['state'] || '')
+    const codeChallenge = String(formData['code_challenge'] || '')
+    const codeChallengeMethod = String(formData['code_challenge_method'] || 'S256')
 
     if (debug) {
       console.log('[OAuth] Dev login attempt:', { email, clientId })
     }
 
     // Validate credentials
-    const devUser = await app.testHelpers!.validateCredentials(email, password)
+    if (!app.testHelpers) {
+      return c.json({ error: 'server_error', error_description: 'Test helpers not available' } as OAuthError, 500)
+    }
+    const devUser = await app.testHelpers.validateCredentials(email, password)
     if (!devUser) {
       const html = generateLoginFormHtml({
         issuer,
@@ -370,9 +414,9 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       user = {
         id: devUser.id,
         email: devUser.email,
-        name: devUser.name,
-        organizationId: devUser.organizationId,
-        roles: devUser.roles,
+        ...(devUser.name !== undefined && { name: devUser.name }),
+        ...(devUser.organizationId !== undefined && { organizationId: devUser.organizationId }),
+        ...(devUser.roles !== undefined && { roles: devUser.roles }),
         createdAt: Date.now(),
         updatedAt: Date.now(),
         lastLoginAt: Date.now(),
@@ -384,7 +428,9 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       await storage.saveUser(user)
     }
 
-    await onUserAuthenticated?.(user)
+    if (onUserAuthenticated) {
+      await onUserAuthenticated(user)
+    }
 
     // Generate authorization code
     const authCode = generateAuthorizationCode()
@@ -394,10 +440,10 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       clientId,
       userId: user.id,
       redirectUri,
-      scope,
+      ...(scope && { scope }),
       codeChallenge,
       codeChallengeMethod: 'S256',
-      state,
+      ...(state && { state }),
       issuedAt: Date.now(),
       expiresAt: Date.now() + authCodeTtl * 1000,
     })
@@ -452,6 +498,21 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       return c.json({ error: 'invalid_request', error_description: 'Invalid or expired state' } as OAuthError, 400)
     }
 
+    // CSRF Protection: Explicitly validate the upstream state matches what was stored
+    // This is defense-in-depth - the lookup by state already provides implicit validation,
+    // but explicit comparison ensures the state wasn't somehow tampered with
+    if (pendingAuth.upstreamState && pendingAuth.upstreamState !== upstreamState) {
+      if (debug) {
+        console.log('[OAuth] State mismatch - potential CSRF attack detected')
+      }
+      return redirectWithError(
+        pendingAuth.redirectUri,
+        'access_denied',
+        'State parameter validation failed - possible CSRF attack',
+        pendingAuth.state
+      )
+    }
+
     // In dev mode, callback shouldn't be used (login handles it directly)
     if (!upstream) {
       return c.json({ error: 'server_error', error_description: 'No upstream provider configured' } as OAuthError, 500)
@@ -476,10 +537,10 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
         clientId: pendingAuth.clientId,
         userId: user.id,
         redirectUri: pendingAuth.redirectUri,
-        scope: pendingAuth.scope,
-        codeChallenge: pendingAuth.codeChallenge,
+        ...(pendingAuth.scope !== undefined && { scope: pendingAuth.scope }),
+        ...(pendingAuth.codeChallenge !== undefined && { codeChallenge: pendingAuth.codeChallenge }),
         codeChallengeMethod: 'S256',
-        state: pendingAuth.state,
+        ...(pendingAuth.state !== undefined && { state: pendingAuth.state }),
         issuedAt: Date.now(),
         expiresAt: Date.now() + authCodeTtl * 1000,
       })
@@ -529,10 +590,10 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       )
     }
 
-    const grantType = params.grant_type
+    const grantType = params['grant_type']
 
     if (debug) {
-      console.log('[OAuth] Token request:', { grantType, clientId: params.client_id })
+      console.log('[OAuth] Token request:', { grantType, clientId: params['client_id'] })
     }
 
     if (grantType === 'authorization_code') {
@@ -587,7 +648,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
         grantTypes: (body.grant_types as OAuthClient['grantTypes']) || ['authorization_code', 'refresh_token'],
         responseTypes: (body.response_types as OAuthClient['responseTypes']) || ['code'],
         tokenEndpointAuthMethod: (body.token_endpoint_auth_method as OAuthClient['tokenEndpointAuthMethod']) || 'client_secret_basic',
-        scope: body.scope,
+        ...(body.scope !== undefined && { scope: body.scope }),
         createdAt: Date.now(),
       }
 
@@ -618,8 +679,8 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
    */
   app.post('/revoke', async (c) => {
     const formData = await c.req.parseBody()
-    const token = String(formData.token || '')
-    const tokenTypeHint = String(formData.token_type_hint || '')
+    const token = String(formData['token'] || '')
+    const tokenTypeHint = String(formData['token_type_hint'] || '')
 
     if (!token) {
       return c.json({ error: 'invalid_request', error_description: 'token is required' } as OAuthError, 400)
@@ -646,16 +707,149 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
 // Helper Functions
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Result of client authentication
+ */
+interface ClientAuthResult {
+  success: boolean
+  client?: OAuthClient
+  error?: string
+  errorDescription?: string
+  statusCode?: number
+}
+
+/**
+ * Authenticate a client at the token endpoint
+ *
+ * Supports:
+ * - client_secret_basic: Authorization: Basic base64(client_id:client_secret)
+ * - client_secret_post: client_id and client_secret in request body
+ * - none: public clients (no secret required)
+ */
+async function authenticateClient(
+  c: Context,
+  params: Record<string, string>,
+  storage: OAuthStorage,
+  debug: boolean
+): Promise<ClientAuthResult> {
+  let clientId: string | undefined
+  let clientSecret: string | undefined
+
+  // Check for client_secret_basic (Authorization header)
+  const authHeader = c.req.header('authorization')
+  if (authHeader?.startsWith('Basic ')) {
+    try {
+      const base64Credentials = authHeader.slice(6)
+      const credentials = atob(base64Credentials)
+      const colonIndex = credentials.indexOf(':')
+      if (colonIndex !== -1) {
+        clientId = decodeURIComponent(credentials.slice(0, colonIndex))
+        clientSecret = decodeURIComponent(credentials.slice(colonIndex + 1))
+      }
+    } catch {
+      return {
+        success: false,
+        error: 'invalid_client',
+        errorDescription: 'Invalid Authorization header',
+        statusCode: 401,
+      }
+    }
+  }
+
+  // Fall back to client_secret_post (body parameters)
+  if (!clientId) {
+    clientId = params['client_id']
+    clientSecret = params['client_secret']
+  }
+
+  if (!clientId) {
+    return {
+      success: false,
+      error: 'invalid_request',
+      errorDescription: 'client_id is required',
+      statusCode: 400,
+    }
+  }
+
+  // Fetch the client
+  const client = await storage.getClient(clientId)
+  if (!client) {
+    return {
+      success: false,
+      error: 'invalid_client',
+      errorDescription: 'Client not found',
+      statusCode: 401,
+    }
+  }
+
+  // Check if client requires authentication
+  if (client.tokenEndpointAuthMethod !== 'none') {
+    // Client requires secret verification
+    if (!client.clientSecretHash) {
+      // Client is configured to require auth but has no secret stored
+      return {
+        success: false,
+        error: 'invalid_client',
+        errorDescription: 'Client authentication failed',
+        statusCode: 401,
+      }
+    }
+
+    if (!clientSecret) {
+      return {
+        success: false,
+        error: 'invalid_client',
+        errorDescription: 'Client secret is required',
+        statusCode: 401,
+      }
+    }
+
+    // Verify the secret using constant-time comparison
+    const secretValid = await verifyClientSecret(clientSecret, client.clientSecretHash)
+    if (!secretValid) {
+      if (debug) {
+        console.log('[OAuth] Client authentication failed for:', clientId)
+      }
+      return {
+        success: false,
+        error: 'invalid_client',
+        errorDescription: 'Client authentication failed',
+        statusCode: 401,
+      }
+    }
+  }
+
+  if (debug) {
+    console.log('[OAuth] Client authenticated:', clientId)
+  }
+
+  return {
+    success: true,
+    client,
+  }
+}
+
 function redirectWithError(redirectUri: string, error: string, description?: string, state?: string): Response {
-  const url = new URL(redirectUri)
-  url.searchParams.set('error', error)
-  if (description) {
-    url.searchParams.set('error_description', description)
+  try {
+    const url = new URL(redirectUri)
+    url.searchParams.set('error', error)
+    if (description) {
+      url.searchParams.set('error_description', description)
+    }
+    if (state) {
+      url.searchParams.set('state', state)
+    }
+    return Response.redirect(url.toString(), 302)
+  } catch {
+    // If redirect_uri is malformed, return a JSON error response instead of redirecting
+    return new Response(JSON.stringify({
+      error,
+      error_description: description || 'Invalid redirect_uri',
+    }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
-  if (state) {
-    url.searchParams.set('state', state)
-  }
-  return Response.redirect(url.toString(), 302)
 }
 
 function buildUpstreamAuthUrl(
@@ -762,11 +956,12 @@ async function getOrCreateUser(
 
   if (!user) {
     // Create new user
+    const fullName = [upstreamUser.first_name, upstreamUser.last_name].filter(Boolean).join(' ')
     user = {
       id: upstreamUser.id,
       email: upstreamUser.email,
-      name: [upstreamUser.first_name, upstreamUser.last_name].filter(Boolean).join(' ') || undefined,
-      organizationId: upstreamUser.organization_id,
+      ...(fullName && { name: fullName }),
+      ...(upstreamUser.organization_id !== undefined && { organizationId: upstreamUser.organization_id }),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       lastLoginAt: Date.now(),
@@ -779,28 +974,39 @@ async function getOrCreateUser(
     await storage.saveUser(user)
   }
 
-  await onUserAuthenticated?.(user)
+  if (onUserAuthenticated) {
+    await onUserAuthenticated(user)
+  }
 
   return user
 }
 
 async function handleAuthorizationCodeGrant(
-  c: any,
+  c: Context,
   params: Record<string, string>,
   storage: OAuthStorage,
   accessTokenTtl: number,
   refreshTokenTtl: number,
   debug: boolean
 ): Promise<Response> {
-  const { code, client_id, redirect_uri, code_verifier } = params
+  const code = params['code']
+  const redirect_uri = params['redirect_uri']
+  const code_verifier = params['code_verifier']
 
   if (!code) {
     return c.json({ error: 'invalid_request', error_description: 'code is required' } as OAuthError, 400)
   }
 
-  if (!client_id) {
-    return c.json({ error: 'invalid_request', error_description: 'client_id is required' } as OAuthError, 400)
+  // Authenticate client (supports client_secret_basic and client_secret_post)
+  const authResult = await authenticateClient(c, params, storage, debug)
+  if (!authResult.success) {
+    const statusCode = (authResult.statusCode || 401) as 400 | 401
+    return c.json(
+      { error: authResult.error, error_description: authResult.errorDescription } as OAuthError,
+      statusCode
+    )
   }
+  const client = authResult.client!
 
   // Consume authorization code (one-time use)
   const authCode = await storage.consumeAuthorizationCode(code)
@@ -808,8 +1014,8 @@ async function handleAuthorizationCodeGrant(
     return c.json({ error: 'invalid_grant', error_description: 'Invalid or expired authorization code' } as OAuthError, 400)
   }
 
-  // Verify client
-  if (authCode.clientId !== client_id) {
+  // Verify client matches the code
+  if (authCode.clientId !== client.clientId) {
     return c.json({ error: 'invalid_grant', error_description: 'Client mismatch' } as OAuthError, 400)
   }
 
@@ -818,16 +1024,20 @@ async function handleAuthorizationCodeGrant(
     return c.json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' } as OAuthError, 400)
   }
 
-  // Verify PKCE
-  if (authCode.codeChallenge) {
-    if (!code_verifier) {
-      return c.json({ error: 'invalid_request', error_description: 'code_verifier is required' } as OAuthError, 400)
-    }
+  // Verify PKCE (required in OAuth 2.1)
+  // Per OAuth 2.1 spec, PKCE is REQUIRED for authorization_code flow
+  if (!authCode.codeChallenge) {
+    // This should never happen if the authorize endpoint is working correctly
+    return c.json({ error: 'server_error', error_description: 'Authorization code missing code_challenge' } as OAuthError, 500)
+  }
 
-    const valid = await verifyCodeChallenge(code_verifier, authCode.codeChallenge, authCode.codeChallengeMethod || 'S256')
-    if (!valid) {
-      return c.json({ error: 'invalid_grant', error_description: 'Invalid code_verifier' } as OAuthError, 400)
-    }
+  if (!code_verifier) {
+    return c.json({ error: 'invalid_request', error_description: 'code_verifier is required' } as OAuthError, 400)
+  }
+
+  const valid = await verifyCodeChallenge(code_verifier, authCode.codeChallenge, authCode.codeChallengeMethod || 'S256')
+  if (!valid) {
+    return c.json({ error: 'invalid_grant', error_description: 'Invalid code_verifier' } as OAuthError, 400)
   }
 
   // Check expiration
@@ -845,7 +1055,7 @@ async function handleAuthorizationCodeGrant(
     tokenType: 'Bearer',
     clientId: authCode.clientId,
     userId: authCode.userId,
-    scope: authCode.scope,
+    ...(authCode.scope !== undefined && { scope: authCode.scope }),
     issuedAt: now,
     expiresAt: now + accessTokenTtl * 1000,
   })
@@ -854,9 +1064,9 @@ async function handleAuthorizationCodeGrant(
     token: refreshToken,
     clientId: authCode.clientId,
     userId: authCode.userId,
-    scope: authCode.scope,
+    ...(authCode.scope !== undefined && { scope: authCode.scope }),
     issuedAt: now,
-    expiresAt: refreshTokenTtl > 0 ? now + refreshTokenTtl * 1000 : undefined,
+    ...(refreshTokenTtl > 0 && { expiresAt: now + refreshTokenTtl * 1000 }),
   })
 
   // Save grant
@@ -864,7 +1074,7 @@ async function handleAuthorizationCodeGrant(
     id: `${authCode.userId}:${authCode.clientId}`,
     userId: authCode.userId,
     clientId: authCode.clientId,
-    scope: authCode.scope,
+    ...(authCode.scope !== undefined && { scope: authCode.scope }),
     createdAt: now,
     lastUsedAt: now,
   })
@@ -878,25 +1088,36 @@ async function handleAuthorizationCodeGrant(
     token_type: 'Bearer',
     expires_in: accessTokenTtl,
     refresh_token: refreshToken,
-    scope: authCode.scope,
+    ...(authCode.scope !== undefined && { scope: authCode.scope }),
   }
 
   return c.json(response)
 }
 
 async function handleRefreshTokenGrant(
-  c: any,
+  c: Context,
   params: Record<string, string>,
   storage: OAuthStorage,
   accessTokenTtl: number,
   refreshTokenTtl: number,
   debug: boolean
 ): Promise<Response> {
-  const { refresh_token, client_id } = params
+  const refresh_token = params['refresh_token']
 
   if (!refresh_token) {
     return c.json({ error: 'invalid_request', error_description: 'refresh_token is required' } as OAuthError, 400)
   }
+
+  // Authenticate client (supports client_secret_basic and client_secret_post)
+  const authResult = await authenticateClient(c, params, storage, debug)
+  if (!authResult.success) {
+    const statusCode = (authResult.statusCode || 401) as 400 | 401
+    return c.json(
+      { error: authResult.error, error_description: authResult.errorDescription } as OAuthError,
+      statusCode
+    )
+  }
+  const client = authResult.client!
 
   const storedRefresh = await storage.getRefreshToken(refresh_token)
   if (!storedRefresh) {
@@ -911,7 +1132,8 @@ async function handleRefreshTokenGrant(
     return c.json({ error: 'invalid_grant', error_description: 'Refresh token expired' } as OAuthError, 400)
   }
 
-  if (client_id && storedRefresh.clientId !== client_id) {
+  // Verify the refresh token belongs to the authenticated client
+  if (storedRefresh.clientId !== client.clientId) {
     return c.json({ error: 'invalid_grant', error_description: 'Client mismatch' } as OAuthError, 400)
   }
 
@@ -925,7 +1147,7 @@ async function handleRefreshTokenGrant(
     tokenType: 'Bearer',
     clientId: storedRefresh.clientId,
     userId: storedRefresh.userId,
-    scope: storedRefresh.scope,
+    ...(storedRefresh.scope !== undefined && { scope: storedRefresh.scope }),
     issuedAt: now,
     expiresAt: now + accessTokenTtl * 1000,
   })
@@ -936,9 +1158,9 @@ async function handleRefreshTokenGrant(
     token: newRefreshToken,
     clientId: storedRefresh.clientId,
     userId: storedRefresh.userId,
-    scope: storedRefresh.scope,
+    ...(storedRefresh.scope !== undefined && { scope: storedRefresh.scope }),
     issuedAt: now,
-    expiresAt: refreshTokenTtl > 0 ? now + refreshTokenTtl * 1000 : undefined,
+    ...(refreshTokenTtl > 0 && { expiresAt: now + refreshTokenTtl * 1000 }),
   })
 
   // Update grant last used
@@ -957,7 +1179,7 @@ async function handleRefreshTokenGrant(
     token_type: 'Bearer',
     expires_in: accessTokenTtl,
     refresh_token: newRefreshToken,
-    scope: storedRefresh.scope,
+    ...(storedRefresh.scope !== undefined && { scope: storedRefresh.scope }),
   }
 
   return c.json(response)

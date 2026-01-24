@@ -13,7 +13,7 @@ import type {
   OAuthAccessToken,
   OAuthRefreshToken,
   OAuthGrant,
-} from './types'
+} from './types.js'
 
 /**
  * Storage interface for OAuth 2.1 server

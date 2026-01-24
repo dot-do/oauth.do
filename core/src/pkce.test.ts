@@ -12,7 +12,7 @@ import {
   base64UrlEncode,
   base64UrlDecode,
   constantTimeEqual,
-} from './pkce'
+} from './pkce.js'
 
 describe('PKCE', () => {
   describe('generateCodeVerifier', () => {

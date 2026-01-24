@@ -105,8 +105,10 @@ export interface OAuthAuthorizationCode {
   issuedAt: number
   /** When the code expires (typically 10 minutes) */
   expiresAt: number
-  /** State parameter for CSRF protection */
+  /** Client's state parameter for CSRF protection (passed back to client) */
   state?: string
+  /** Server's upstream state for validating upstream provider callback */
+  upstreamState?: string
 }
 
 /**
@@ -246,19 +248,47 @@ export interface OAuthError {
 }
 
 /**
- * Upstream OAuth provider configuration (e.g., WorkOS)
+ * Base configuration shared by all upstream OAuth providers
  */
-export interface UpstreamOAuthConfig {
-  /** Provider type */
-  provider: 'workos' | 'auth0' | 'okta' | 'custom'
+interface UpstreamOAuthConfigBase {
   /** API key or client secret */
   apiKey: string
   /** Client ID */
   clientId: string
-  /** Authorization endpoint (for custom providers) */
+}
+
+/**
+ * Configuration for known OAuth providers (WorkOS, Auth0, Okta)
+ * These providers have well-known endpoints, so no custom endpoints needed
+ */
+interface KnownProviderConfig extends UpstreamOAuthConfigBase {
+  /** Provider type */
+  provider: 'workos' | 'auth0' | 'okta'
+  /** Authorization endpoint (optional override) */
   authorizationEndpoint?: string
-  /** Token endpoint (for custom providers) */
+  /** Token endpoint (optional override) */
   tokenEndpoint?: string
-  /** JWKS URI (for custom providers) */
+  /** JWKS URI (optional override) */
   jwksUri?: string
 }
+
+/**
+ * Configuration for custom OAuth providers
+ * Custom providers require explicit endpoint configuration
+ */
+interface CustomProviderConfig extends UpstreamOAuthConfigBase {
+  /** Provider type */
+  provider: 'custom'
+  /** Authorization endpoint (required for custom providers) */
+  authorizationEndpoint: string
+  /** Token endpoint (required for custom providers) */
+  tokenEndpoint: string
+  /** JWKS URI (optional for custom providers) */
+  jwksUri?: string
+}
+
+/**
+ * Upstream OAuth provider configuration (e.g., WorkOS)
+ * Discriminated union based on provider type
+ */
+export type UpstreamOAuthConfig = KnownProviderConfig | CustomProviderConfig
