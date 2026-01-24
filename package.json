@@ -1,6 +1,6 @@
 {
 	"name": "oauth.do",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "OAuth authentication SDK, React components, and Hono middleware for org.ai identity",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -37,6 +37,10 @@
 		"./types": {
 			"types": "./dist/types-export.d.ts",
 			"import": "./dist/types-export.js"
+		},
+		"./session": {
+			"types": "./dist/session.d.ts",
+			"import": "./dist/session.js"
 		},
 		"./mdx/*": "./src/mdx/*"
 	},

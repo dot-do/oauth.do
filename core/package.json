@@ -1,0 +1,79 @@
+{
+  "name": "@dotdo/oauth",
+  "version": "0.1.0",
+  "description": "OAuth 2.1 server implementation for MCP - the leaf package with zero dependencies on @dotdo/do or oauth.do",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "import": "./dist/storage.js"
+    },
+    "./pkce": {
+      "types": "./dist/pkce.d.ts",
+      "import": "./dist/pkce.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "pnpm run clean && pnpm run build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "oauth",
+    "oauth2",
+    "oauth2.1",
+    "mcp",
+    "model-context-protocol",
+    "authentication",
+    "authorization",
+    "cloudflare-workers",
+    "hono"
+  ],
+  "author": "Nathan Clevenger",
+  "license": "MIT",
+  "homepage": "https://oauth.do",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drivly/oauth.do.git",
+    "directory": "core"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "hono": "^4.7.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250124.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "peerDependencies": {
+    "hono": ">=4.0.0"
+  },
+  "prettier": {
+    "semi": false,
+    "singleQuote": true,
+    "jsxSingleQuote": true,
+    "tabWidth": 2,
+    "printWidth": 160
+  }
+}

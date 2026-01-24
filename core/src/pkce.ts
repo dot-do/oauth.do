@@ -1,0 +1,211 @@
+/**
+ * @dotdo/oauth - PKCE (Proof Key for Code Exchange) utilities
+ *
+ * OAuth 2.1 requires PKCE for all authorization code flows.
+ * Only S256 is supported (plain is deprecated in OAuth 2.1).
+ */
+
+/**
+ * Generate a cryptographically random code verifier
+ *
+ * Per RFC 7636, the verifier must be:
+ * - Between 43 and 128 characters long
+ * - Using only unreserved URI characters [A-Z] / [a-z] / [0-9] / "-" / "." / "_" / "~"
+ *
+ * @param length - Length of the verifier (default: 64)
+ * @returns Random code verifier string
+ */
+export function generateCodeVerifier(length: number = 64): string {
+  if (length < 43 || length > 128) {
+    throw new Error('Code verifier length must be between 43 and 128 characters')
+  }
+
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'
+  const randomValues = new Uint8Array(length)
+  crypto.getRandomValues(randomValues)
+
+  let verifier = ''
+  for (let i = 0; i < length; i++) {
+    verifier += chars[randomValues[i]! % chars.length]
+  }
+
+  return verifier
+}
+
+/**
+ * Generate a code challenge from a code verifier using S256 method
+ *
+ * S256: BASE64URL(SHA256(code_verifier))
+ *
+ * @param verifier - The code verifier
+ * @returns Base64URL-encoded SHA-256 hash of the verifier
+ */
+export async function generateCodeChallenge(verifier: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(verifier)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  return base64UrlEncode(hashBuffer)
+}
+
+/**
+ * Verify a code verifier against a code challenge
+ *
+ * @param verifier - The code verifier from the token request
+ * @param challenge - The code challenge from the authorization request
+ * @param method - The challenge method (must be 'S256' for OAuth 2.1)
+ * @returns True if the verifier matches the challenge
+ */
+export async function verifyCodeChallenge(
+  verifier: string,
+  challenge: string,
+  method: string = 'S256'
+): Promise<boolean> {
+  if (method !== 'S256') {
+    // OAuth 2.1 only supports S256
+    return false
+  }
+
+  const expectedChallenge = await generateCodeChallenge(verifier)
+  return constantTimeEqual(expectedChallenge, challenge)
+}
+
+/**
+ * Generate a PKCE pair (verifier and challenge)
+ *
+ * @param length - Length of the verifier (default: 64)
+ * @returns Object with verifier and challenge
+ */
+export async function generatePkce(length: number = 64): Promise<{ verifier: string; challenge: string }> {
+  const verifier = generateCodeVerifier(length)
+  const challenge = await generateCodeChallenge(verifier)
+  return { verifier, challenge }
+}
+
+/**
+ * Base64URL encode an ArrayBuffer
+ *
+ * @param buffer - The buffer to encode
+ * @returns Base64URL-encoded string (no padding)
+ */
+export function base64UrlEncode(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!)
+  }
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+/**
+ * Base64URL decode a string to ArrayBuffer
+ *
+ * @param str - Base64URL-encoded string
+ * @returns Decoded ArrayBuffer
+ */
+export function base64UrlDecode(str: string): ArrayBuffer {
+  // Add padding if needed
+  const padded = str + '='.repeat((4 - (str.length % 4)) % 4)
+  // Convert from base64url to base64
+  const base64 = padded.replace(/-/g, '+').replace(/_/g, '/')
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes.buffer
+}
+
+/**
+ * Constant-time string comparison to prevent timing attacks
+ *
+ * @param a - First string
+ * @param b - Second string
+ * @returns True if strings are equal
+ */
+export function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false
+  }
+
+  let result = 0
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+
+  return result === 0
+}
+
+/**
+ * Generate a random state parameter for CSRF protection
+ *
+ * @param length - Length of the state (default: 32)
+ * @returns Random state string
+ */
+export function generateState(length: number = 32): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  const randomValues = new Uint8Array(length)
+  crypto.getRandomValues(randomValues)
+
+  let state = ''
+  for (let i = 0; i < length; i++) {
+    state += chars[randomValues[i]! % chars.length]
+  }
+
+  return state
+}
+
+/**
+ * Generate a random token (for access tokens, refresh tokens, etc.)
+ *
+ * @param length - Length of the token (default: 32)
+ * @returns Random token string
+ */
+export function generateToken(length: number = 32): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  const randomValues = new Uint8Array(length)
+  crypto.getRandomValues(randomValues)
+
+  let token = ''
+  for (let i = 0; i < length; i++) {
+    token += chars[randomValues[i]! % chars.length]
+  }
+
+  return token
+}
+
+/**
+ * Generate a unique authorization code
+ *
+ * @returns Random authorization code
+ */
+export function generateAuthorizationCode(): string {
+  return generateToken(48)
+}
+
+/**
+ * Hash a client secret for storage
+ *
+ * @param secret - The client secret to hash
+ * @returns SHA-256 hash of the secret
+ */
+export async function hashClientSecret(secret: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(secret)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  return base64UrlEncode(hashBuffer)
+}
+
+/**
+ * Verify a client secret against a hash
+ *
+ * @param secret - The client secret to verify
+ * @param hash - The stored hash
+ * @returns True if the secret matches the hash
+ */
+export async function verifyClientSecret(secret: string, hash: string): Promise<boolean> {
+  const expectedHash = await hashClientSecret(secret)
+  return constantTimeEqual(expectedHash, hash)
+}

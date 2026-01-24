@@ -389,6 +389,19 @@ export function apiKey(options: ApiKeyOptions): MiddlewareHandler {
  * }))
  * ```
  */
+// ═══════════════════════════════════════════════════════════════════════════
+// Session Auth Re-exports
+// ═══════════════════════════════════════════════════════════════════════════
+
+export { sessionAuth, requireSession, createOAuthRoutes } from './session-hono'
+export type { SessionUser, SessionAuthOptions, OAuthRoutesOptions, SessionEnv } from './session-hono'
+export { encodeSession, decodeSession, getSessionConfig } from './session'
+export type { SessionData, SessionConfig } from './session'
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Combined Auth
+// ═══════════════════════════════════════════════════════════════════════════
+
 export function combined(options: {
   auth?: AuthOptions
   apiKey?: ApiKeyOptions
