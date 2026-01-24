@@ -42,7 +42,11 @@
 
 // Server
 export { createOAuth21Server } from './server'
-export type { OAuth21ServerConfig } from './server'
+export type { OAuth21ServerConfig, OAuth21Server } from './server'
+
+// Dev Mode & Test Helpers
+export { createTestHelpers, generateLoginFormHtml } from './dev'
+export type { DevModeConfig, DevUser, TestHelpers } from './dev'
 
 // Storage
 export { MemoryOAuthStorage } from './storage'

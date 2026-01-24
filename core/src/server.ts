@@ -34,6 +34,13 @@ import {
   verifyCodeChallenge,
   hashClientSecret,
 } from './pkce'
+import {
+  type DevModeConfig,
+  type DevUser,
+  type TestHelpers,
+  createTestHelpers,
+  generateLoginFormHtml,
+} from './dev'
 
 /**
  * Configuration for the OAuth 2.1 server
@@ -43,8 +50,10 @@ export interface OAuth21ServerConfig {
   issuer: string
   /** Storage backend for users, clients, tokens */
   storage: OAuthStorage
-  /** Upstream OAuth provider configuration */
-  upstream: UpstreamOAuthConfig
+  /** Upstream OAuth provider configuration (optional if devMode enabled) */
+  upstream?: UpstreamOAuthConfig
+  /** Development mode configuration (no upstream provider needed) */
+  devMode?: DevModeConfig
   /** Supported scopes */
   scopes?: string[]
   /** Access token lifetime in seconds (default: 3600) */
@@ -59,6 +68,14 @@ export interface OAuth21ServerConfig {
   onUserAuthenticated?: (user: OAuthUser) => void | Promise<void>
   /** Enable debug logging */
   debug?: boolean
+}
+
+/**
+ * Extended Hono app with test helpers
+ */
+export interface OAuth21Server extends Hono {
+  /** Test helpers for E2E testing (only available in devMode) */
+  testHelpers?: TestHelpers
 }
 
 /**
@@ -81,12 +98,31 @@ export interface OAuth21ServerConfig {
  * // Mount on your main app
  * app.route('/', oauthServer)
  * ```
+ *
+ * @example Development mode (no upstream provider)
+ * ```typescript
+ * const oauthServer = createOAuth21Server({
+ *   issuer: 'https://test.mcp.do',
+ *   storage: new MemoryOAuthStorage(),
+ *   devMode: {
+ *     enabled: true,
+ *     users: [
+ *       { id: 'test-user', email: 'test@example.com', password: 'test123' }
+ *     ],
+ *     allowAnyCredentials: true, // Create users on the fly
+ *   },
+ * })
+ *
+ * // Access test helpers for Playwright
+ * const { accessToken } = await oauthServer.testHelpers.getAccessToken('user-id', 'client-id')
+ * ```
  */
-export function createOAuth21Server(config: OAuth21ServerConfig): Hono {
+export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server {
   const {
     issuer,
     storage,
     upstream,
+    devMode,
     scopes = ['openid', 'profile', 'email', 'offline_access'],
     accessTokenTtl = 3600,
     refreshTokenTtl = 2592000,
@@ -96,7 +132,32 @@ export function createOAuth21Server(config: OAuth21ServerConfig): Hono {
     debug = false,
   } = config
 
-  const app = new Hono()
+  // Validate configuration
+  if (!devMode?.enabled && !upstream) {
+    throw new Error('Either upstream configuration or devMode must be provided')
+  }
+
+  const app = new Hono() as OAuth21Server
+
+  // Dev mode user storage
+  const devUsers = new Map<string, DevUser>()
+
+  // Initialize dev users
+  if (devMode?.enabled && devMode.users) {
+    for (const user of devMode.users) {
+      devUsers.set(user.email.toLowerCase(), user)
+    }
+  }
+
+  // Create test helpers if in dev mode
+  if (devMode?.enabled) {
+    app.testHelpers = createTestHelpers(storage, devUsers, {
+      accessTokenTtl,
+      refreshTokenTtl,
+      authCodeTtl,
+      allowAnyCredentials: devMode.allowAnyCredentials,
+    })
+  }
 
   // CORS for all endpoints
   app.use('*', cors({
@@ -211,6 +272,25 @@ export function createOAuth21Server(config: OAuth21ServerConfig): Hono {
       return redirectWithError(redirectUri, 'invalid_request', 'code_challenge_method must be S256', state)
     }
 
+    // Dev mode: show login form instead of redirecting to upstream
+    if (devMode?.enabled) {
+      const html = devMode.customLoginPage || generateLoginFormHtml({
+        issuer,
+        clientId,
+        redirectUri,
+        scope,
+        state,
+        codeChallenge,
+        codeChallengeMethod,
+      })
+      return c.html(html)
+    }
+
+    // Production mode: redirect to upstream
+    if (!upstream) {
+      return c.json({ error: 'server_error', error_description: 'No upstream provider configured' } as OAuthError, 500)
+    }
+
     // Store the authorization request and redirect to upstream
     const upstreamState = generateState(64)
 
@@ -242,6 +322,104 @@ export function createOAuth21Server(config: OAuth21ServerConfig): Hono {
     return c.redirect(upstreamAuthUrl)
   })
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Dev Mode Login Endpoint
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Login form submission (dev mode only)
+   */
+  app.post('/login', async (c) => {
+    if (!devMode?.enabled) {
+      return c.json({ error: 'invalid_request', error_description: 'Dev mode is not enabled' } as OAuthError, 400)
+    }
+
+    const formData = await c.req.parseBody()
+    const email = String(formData.email || '')
+    const password = String(formData.password || '')
+    const clientId = String(formData.client_id || '')
+    const redirectUri = String(formData.redirect_uri || '')
+    const scope = String(formData.scope || '')
+    const state = String(formData.state || '')
+    const codeChallenge = String(formData.code_challenge || '')
+    const codeChallengeMethod = String(formData.code_challenge_method || 'S256')
+
+    if (debug) {
+      console.log('[OAuth] Dev login attempt:', { email, clientId })
+    }
+
+    // Validate credentials
+    const devUser = await app.testHelpers!.validateCredentials(email, password)
+    if (!devUser) {
+      const html = generateLoginFormHtml({
+        issuer,
+        clientId,
+        redirectUri,
+        scope,
+        state,
+        codeChallenge,
+        codeChallengeMethod,
+        error: 'Invalid email or password',
+      })
+      return c.html(html, 401)
+    }
+
+    // Get or create user in storage
+    let user = await storage.getUserByEmail(devUser.email)
+    if (!user) {
+      user = {
+        id: devUser.id,
+        email: devUser.email,
+        name: devUser.name,
+        organizationId: devUser.organizationId,
+        roles: devUser.roles,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        lastLoginAt: Date.now(),
+      }
+      await storage.saveUser(user)
+    } else {
+      user.lastLoginAt = Date.now()
+      user.updatedAt = Date.now()
+      await storage.saveUser(user)
+    }
+
+    await onUserAuthenticated?.(user)
+
+    // Generate authorization code
+    const authCode = generateAuthorizationCode()
+
+    await storage.saveAuthorizationCode({
+      code: authCode,
+      clientId,
+      userId: user.id,
+      redirectUri,
+      scope,
+      codeChallenge,
+      codeChallengeMethod: 'S256',
+      state,
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + authCodeTtl * 1000,
+    })
+
+    // Redirect back to client with code
+    const redirectUrl = new URL(redirectUri)
+    redirectUrl.searchParams.set('code', authCode)
+    if (state) {
+      redirectUrl.searchParams.set('state', state)
+    }
+
+    if (debug) {
+      console.log('[OAuth] Dev login successful, redirecting to:', redirectUrl.toString())
+    }
+
+    return c.redirect(redirectUrl.toString())
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Upstream OAuth Callback
+  // ═══════════════════════════════════════════════════════════════════════════
+
   /**
    * Callback from upstream OAuth provider
    */
@@ -272,6 +450,11 @@ export function createOAuth21Server(config: OAuth21ServerConfig): Hono {
     const pendingAuth = await storage.consumeAuthorizationCode(`pending:${upstreamState}`)
     if (!pendingAuth) {
       return c.json({ error: 'invalid_request', error_description: 'Invalid or expired state' } as OAuthError, 400)
+    }
+
+    // In dev mode, callback shouldn't be used (login handles it directly)
+    if (!upstream) {
+      return c.json({ error: 'server_error', error_description: 'No upstream provider configured' } as OAuthError, 500)
     }
 
     try {
