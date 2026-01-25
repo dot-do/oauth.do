@@ -208,6 +208,12 @@ If you're not logged in, it will automatically start the login flow before launc
 
 Pre-configured React components for authentication, wrapping WorkOS AuthKit widgets.
 
+**Additional dependencies for React:** When using `oauth.do/react`, you need to install React and the auth provider:
+
+```bash
+pnpm add react react-dom @mdxui/auth @radix-ui/themes
+```
+
 ```tsx
 import { OAuthDoProvider, useAuth, SignInButton, SignOutButton } from 'oauth.do/react'
 

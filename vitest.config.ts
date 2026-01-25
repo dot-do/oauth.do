@@ -23,6 +23,8 @@ export default defineConfig({
 		alias: {
 			// Mock cloudflare:workers for Node.js tests
 			'cloudflare:workers': resolve(__dirname, 'tests/mocks/cloudflare-workers.ts'),
+			// Mock @mdxui/auth for React tests (package has broken dependencies)
+			'@mdxui/auth': resolve(__dirname, 'tests/mocks/mdxui-auth.ts'),
 		},
 	},
 })

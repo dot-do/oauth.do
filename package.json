@@ -1,8 +1,9 @@
 {
   "name": "oauth.do",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "OAuth authentication SDK, React components, and Hono middleware for org.ai identity",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
@@ -101,25 +102,11 @@
     "keytar": "^7.9.0"
   },
   "peerDependencies": {
-    "@mdxui/auth": ">=1.0.0",
-    "@radix-ui/themes": ">=3.0.0",
-    "@tanstack/react-query": ">=5.0.0",
     "hono": ">=4.0.0",
     "itty-router": ">=5.0.0",
-    "jose": ">=5.0.0",
-    "react": ">=18.0.0",
-    "react-dom": ">=18.0.0"
+    "jose": ">=5.0.0"
   },
   "peerDependenciesMeta": {
-    "@mdxui/auth": {
-      "optional": true
-    },
-    "@radix-ui/themes": {
-      "optional": true
-    },
-    "@tanstack/react-query": {
-      "optional": true
-    },
     "hono": {
       "optional": true
     },
@@ -127,12 +114,6 @@
       "optional": true
     },
     "jose": {
-      "optional": true
-    },
-    "react": {
-      "optional": true
-    },
-    "react-dom": {
       "optional": true
     }
   },
