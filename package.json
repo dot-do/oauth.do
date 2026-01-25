@@ -42,6 +42,12 @@
       "types": "./dist/session.d.ts",
       "import": "./dist/session.js"
     },
+    "./itty": {
+      "types": "./dist/itty.d.ts",
+      "import": "./dist/itty.js",
+      "require": "./dist/itty.js",
+      "default": "./dist/itty.js"
+    },
     "./mdx/*": "./src/mdx/*"
   },
   "files": [
@@ -100,6 +106,7 @@
     "@workos-inc/authkit-react": ">=0.5.0",
     "@workos-inc/widgets": ">=1.0.0",
     "hono": ">=4.0.0",
+    "itty-router": ">=5.0.0",
     "jose": ">=5.0.0",
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0"
@@ -118,6 +125,9 @@
       "optional": true
     },
     "hono": {
+      "optional": true
+    },
+    "itty-router": {
       "optional": true
     },
     "jose": {
