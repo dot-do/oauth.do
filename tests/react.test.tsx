@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import React from 'react'
 
-// Mock @workos-inc/authkit-react
+// Mock @mdxui/auth
 const mockSignIn = vi.fn()
 const mockSignUp = vi.fn()
 const mockSignOut = vi.fn()
@@ -35,17 +35,39 @@ const mockUseAuth = vi.fn().mockReturnValue({
 	getSignUpUrl: mockGetSignUpUrl,
 })
 
-vi.mock('@workos-inc/authkit-react', () => ({
-	AuthKitProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="authkit-provider">{children}</div>,
+vi.mock('@mdxui/auth', () => ({
+	IdentityProvider: ({ children }: { children: React.ReactNode }) => (
+		<div data-testid="identity-provider">
+			<div data-testid="authkit-provider">
+				<div data-testid="workos-widgets">{children}</div>
+			</div>
+		</div>
+	),
 	useAuth: () => mockUseAuth(),
-}))
-
-// Mock @workos-inc/widgets
-vi.mock('@workos-inc/widgets', () => ({
-	WorkOsWidgets: ({ children }: { children: React.ReactNode }) => <div data-testid="workos-widgets">{children}</div>,
-	ApiKeys: ({ authToken }: { authToken: string }) => <div data-testid="api-keys">ApiKeys: {typeof authToken}</div>,
-	UsersManagement: ({ authToken }: { authToken: string }) => <div data-testid="users-management">UsersManagement: {typeof authToken}</div>,
-	UserProfile: ({ authToken }: { authToken: string }) => <div data-testid="user-profile">UserProfile: {typeof authToken}</div>,
+	SignInButton: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
+		<button className={className}>{children ?? 'Sign In'}</button>
+	),
+	SignOutButton: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
+		<button className={className}>{children ?? 'Sign Out'}</button>
+	),
+	ApiKeys: ({ authToken }: { authToken: string }) => (
+		<div data-testid="api-keys">ApiKeys: {typeof authToken}</div>
+	),
+	UsersManagement: ({ authToken }: { authToken: string }) => (
+		<div data-testid="users-management">UsersManagement: {typeof authToken}</div>
+	),
+	UserProfile: ({ authToken }: { authToken: string }) => (
+		<div data-testid="user-profile">UserProfile: {typeof authToken}</div>
+	),
+	UserMenu: ({ className }: { className?: string }) => (
+		<div data-testid="user-menu" className={className}>UserMenu</div>
+	),
+	TeamSwitcher: ({ className }: { className?: string }) => (
+		<div data-testid="team-switcher" className={className}>TeamSwitcher</div>
+	),
+	OrganizationSwitcher: ({ authToken, switchToOrganization }: { authToken: any; switchToOrganization: any }) => (
+		<div data-testid="organization-switcher">OrganizationSwitcher</div>
+	),
 }))
 
 // Import after mocks are set up
@@ -58,6 +80,9 @@ import {
 	ApiKeys,
 	UsersManagement,
 	UserProfile,
+	UserMenu,
+	TeamSwitcher,
+	OrganizationSwitcher,
 } from '../src/react.js'
 
 // Helper component to test useOAuthDoConfig hook
@@ -146,7 +171,17 @@ describe('React Components', () => {
 			expect(screen.getByTestId('auth-domain')).toHaveTextContent('custom.oauth.do')
 		})
 
-		it('wraps children with WorkOS AuthKitProvider', () => {
+		it('wraps children with IdentityProvider from @mdxui/auth', () => {
+			render(
+				<OAuthDoProvider>
+					<div>Content</div>
+				</OAuthDoProvider>
+			)
+
+			expect(screen.getByTestId('identity-provider')).toBeInTheDocument()
+		})
+
+		it('wraps children with AuthKitProvider (via IdentityProvider)', () => {
 			render(
 				<OAuthDoProvider>
 					<div>Content</div>
@@ -156,7 +191,7 @@ describe('React Components', () => {
 			expect(screen.getByTestId('authkit-provider')).toBeInTheDocument()
 		})
 
-		it('wraps children with WorkOsWidgets', () => {
+		it('wraps children with WorkOsWidgets (via IdentityProvider)', () => {
 			render(
 				<OAuthDoProvider>
 					<div>Content</div>
@@ -198,7 +233,7 @@ describe('React Components', () => {
 	})
 
 	describe('useAuth hook', () => {
-		it('returns auth state from WorkOS', () => {
+		it('returns auth state from @mdxui/auth', () => {
 			render(
 				<OAuthDoProvider>
 					<AuthDisplay />
@@ -468,6 +503,41 @@ describe('React Components', () => {
 			)
 
 			expect(screen.getByTestId('user-profile')).toBeInTheDocument()
+		})
+	})
+
+	describe('New Components from @mdxui/auth', () => {
+		it('exports UserMenu component', () => {
+			render(
+				<OAuthDoProvider>
+					<UserMenu />
+				</OAuthDoProvider>
+			)
+
+			expect(screen.getByTestId('user-menu')).toBeInTheDocument()
+		})
+
+		it('exports TeamSwitcher component', () => {
+			render(
+				<OAuthDoProvider>
+					<TeamSwitcher />
+				</OAuthDoProvider>
+			)
+
+			expect(screen.getByTestId('team-switcher')).toBeInTheDocument()
+		})
+
+		it('exports OrganizationSwitcher component', () => {
+			render(
+				<OAuthDoProvider>
+					<OrganizationSwitcher
+						authToken={mockGetAccessToken}
+						switchToOrganization={mockSwitchToOrganization}
+					/>
+				</OAuthDoProvider>
+			)
+
+			expect(screen.getByTestId('organization-switcher')).toBeInTheDocument()
 		})
 	})
 })

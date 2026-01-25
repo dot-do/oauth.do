@@ -1,37 +1,139 @@
 /**
  * oauth.do/react - React components for authentication
  *
- * Wraps WorkOS AuthKit widgets with oauth.do configuration.
- * Pre-configured with oauth.do WorkOS client ID.
+ * Wraps @mdxui/auth with oauth.do configuration.
+ * Pre-configured with oauth.do WorkOS client ID and domain.
  *
  * @packageDocumentation
  */
 
 'use client'
 
-import {
-  WorkOsWidgets,
-  ApiKeys as WorkOSApiKeys,
-  UsersManagement as WorkOSUsersManagement,
-  UserProfile as WorkOSUserProfile
-} from '@workos-inc/widgets'
-import {
-  AuthKitProvider as WorkOSAuthKitProvider,
-  useAuth as useWorkOSAuth,
-  type Impersonator,
-  type User,
-  type AuthenticationMethod
-} from '@workos-inc/authkit-react'
-
-/**
- * Auth token can be a string or a function that returns a Promise<string>
- */
-export type AuthToken = string | (() => Promise<string>)
 import React, { createContext, useContext, type ReactNode } from 'react'
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Auth Types (re-exported from authkit-react context)
-// ═══════════════════════════════════════════════════════════════════════════
+// Import from @mdxui/auth instead of direct WorkOS packages
+import {
+  IdentityProvider,
+  useAuth as useMdxuiAuth,
+  SignInButton as MdxuiSignInButton,
+  SignOutButton as MdxuiSignOutButton,
+  ApiKeys as MdxuiApiKeys,
+  UsersManagement as MdxuiUsersManagement,
+  UserProfile as MdxuiUserProfile,
+  UserMenu as MdxuiUserMenu,
+  TeamSwitcher as MdxuiTeamSwitcher,
+  OrganizationSwitcher as MdxuiOrganizationSwitcher,
+  type AuthToken,
+  type AuthUser,
+  type Impersonator,
+  type IdentityProviderProps,
+} from '@mdxui/auth'
+
+// ===============================================================================
+// oauth.do default configuration
+// ===============================================================================
+
+const OAUTH_DO_CONFIG = {
+  clientId: 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
+  apiUrl: 'https://apis.do',
+  authKitDomain: 'login.oauth.do',
+}
+
+// ===============================================================================
+// Context for oauth.do-specific config
+// ===============================================================================
+
+interface OAuthDoContextValue {
+  clientId: string
+  apiUrl: string
+  authKitDomain: string
+}
+
+const OAuthDoContext = createContext<OAuthDoContextValue>(OAUTH_DO_CONFIG)
+
+/**
+ * Hook to access oauth.do-specific configuration
+ *
+ * @example
+ * ```tsx
+ * import { useOAuthDoConfig } from 'oauth.do/react'
+ *
+ * function MyComponent() {
+ *   const { clientId, apiUrl, authKitDomain } = useOAuthDoConfig()
+ *   // Use config values...
+ * }
+ * ```
+ */
+export function useOAuthDoConfig(): OAuthDoContextValue {
+  return useContext(OAuthDoContext)
+}
+
+// ===============================================================================
+// Provider
+// ===============================================================================
+
+export interface OAuthDoProviderProps {
+  children: ReactNode
+  /** Override the default client ID */
+  clientId?: string
+  /** Override the API URL */
+  apiUrl?: string
+  /** Override the AuthKit domain */
+  authKitDomain?: string
+}
+
+/**
+ * OAuth.do Provider - wraps your app with authentication context
+ *
+ * Pre-configured with oauth.do defaults:
+ * - clientId: client_01JQYTRXK9ZPD8JPJTKDCRB656
+ * - authKitDomain: login.oauth.do
+ * - apiUrl: https://apis.do
+ *
+ * @example
+ * ```tsx
+ * import { OAuthDoProvider } from 'oauth.do/react'
+ *
+ * export default function App({ children }) {
+ *   return (
+ *     <OAuthDoProvider>
+ *       {children}
+ *     </OAuthDoProvider>
+ *   )
+ * }
+ * ```
+ *
+ * @example
+ * ```tsx
+ * // With custom overrides
+ * <OAuthDoProvider
+ *   clientId="custom-client-id"
+ *   apiUrl="https://custom.api.do"
+ * >
+ *   {children}
+ * </OAuthDoProvider>
+ * ```
+ */
+export function OAuthDoProvider({
+  children,
+  clientId = OAUTH_DO_CONFIG.clientId,
+  apiUrl = OAUTH_DO_CONFIG.apiUrl,
+  authKitDomain = OAUTH_DO_CONFIG.authKitDomain,
+}: OAuthDoProviderProps): JSX.Element {
+  const config = { clientId, apiUrl, authKitDomain }
+
+  return (
+    <OAuthDoContext.Provider value={config}>
+      <IdentityProvider clientId={clientId} apiHostname={authKitDomain}>
+        {children}
+      </IdentityProvider>
+    </OAuthDoContext.Provider>
+  )
+}
+
+// ===============================================================================
+// Re-exported Auth Types
+// ===============================================================================
 
 /**
  * Options for switching organization
@@ -49,17 +151,17 @@ export interface SwitchToOrganizationOptions {
  */
 export interface AuthState {
   isLoading: boolean
-  user: User | null
+  user: AuthUser | null
   role: string | null
   roles: string[] | null
   organizationId: string | null
   permissions: string[]
   featureFlags: string[]
   impersonator: Impersonator | null
-  authenticationMethod: AuthenticationMethod | null
+  authenticationMethod: string | null
   signIn: () => void
   signUp: () => void
-  getUser: () => User | null
+  getUser: () => AuthUser | null
   getAccessToken: () => Promise<string>
   signOut: () => void
   switchToOrganization: (options: SwitchToOrganizationOptions) => Promise<void>
@@ -67,84 +169,14 @@ export interface AuthState {
   getSignUpUrl: () => Promise<string>
 }
 
-// oauth.do default configuration
-const OAUTH_DO_CONFIG = {
-  clientId: 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
-  apiUrl: 'https://apis.do',
-  authKitDomain: 'login.oauth.do',
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Context
-// ═══════════════════════════════════════════════════════════════════════════
-
-interface OAuthDoContextValue {
-  clientId: string
-  apiUrl: string
-  authKitDomain: string
-}
-
-const OAuthDoContext = createContext<OAuthDoContextValue>(OAUTH_DO_CONFIG)
-
-export function useOAuthDoConfig(): OAuthDoContextValue {
-  return useContext(OAuthDoContext)
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Provider
-// ═══════════════════════════════════════════════════════════════════════════
-
-export interface OAuthDoProviderProps {
-  children: ReactNode
-  /** Override the default client ID */
-  clientId?: string
-  /** Override the API URL */
-  apiUrl?: string
-  /** Override the AuthKit domain */
-  authKitDomain?: string
-}
-
-/**
- * OAuth.do Provider - wraps your app with authentication context
- *
- * @example
- * ```tsx
- * import { OAuthDoProvider } from 'oauth.do/react'
- *
- * export default function App({ children }) {
- *   return (
- *     <OAuthDoProvider>
- *       {children}
- *     </OAuthDoProvider>
- *   )
- * }
- * ```
- */
-export function OAuthDoProvider({
-  children,
-  clientId = OAUTH_DO_CONFIG.clientId,
-  apiUrl = OAUTH_DO_CONFIG.apiUrl,
-  authKitDomain = OAUTH_DO_CONFIG.authKitDomain,
-}: OAuthDoProviderProps): JSX.Element {
-  const config = { clientId, apiUrl, authKitDomain }
-
-  return (
-    <OAuthDoContext.Provider value={config}>
-      <WorkOSAuthKitProvider clientId={clientId}>
-        <WorkOsWidgets>
-          {children}
-        </WorkOsWidgets>
-      </WorkOSAuthKitProvider>
-    </OAuthDoContext.Provider>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
+// ===============================================================================
 // Hooks
-// ═══════════════════════════════════════════════════════════════════════════
+// ===============================================================================
 
 /**
  * useAuth hook - access current user and auth state
+ *
+ * Re-exported from @mdxui/auth with AuthState typing.
  *
  * @example
  * ```tsx
@@ -161,12 +193,12 @@ export function OAuthDoProvider({
  * ```
  */
 export function useAuth(): AuthState {
-  return useWorkOSAuth() as AuthState
+  return useMdxuiAuth() as AuthState
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Widgets
-// ═══════════════════════════════════════════════════════════════════════════
+// ===============================================================================
+// Widgets - Re-exported from @mdxui/auth
+// ===============================================================================
 
 export interface ApiKeysProps {
   /** Auth token for the widget (from useAuth().getAccessToken or server-generated) */
@@ -191,7 +223,7 @@ export interface ApiKeysProps {
  * ```
  */
 export function ApiKeys({ authToken }: ApiKeysProps): JSX.Element {
-  return <WorkOSApiKeys authToken={authToken} />
+  return <MdxuiApiKeys authToken={authToken} />
 }
 
 export interface UsersManagementProps {
@@ -215,7 +247,7 @@ export interface UsersManagementProps {
  * ```
  */
 export function UsersManagement({ authToken }: UsersManagementProps): JSX.Element {
-  return <WorkOSUsersManagement authToken={authToken} />
+  return <MdxuiUsersManagement authToken={authToken} />
 }
 
 export interface UserProfileProps {
@@ -239,12 +271,12 @@ export interface UserProfileProps {
  * ```
  */
 export function UserProfile({ authToken }: UserProfileProps): JSX.Element {
-  return <WorkOSUserProfile authToken={authToken} />
+  return <MdxuiUserProfile authToken={authToken} />
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Login Components
-// ═══════════════════════════════════════════════════════════════════════════
+// ===============================================================================
+// Login Components - oauth.do specific with URL-based redirect
+// ===============================================================================
 
 export interface SignInButtonProps {
   children?: ReactNode
@@ -254,6 +286,8 @@ export interface SignInButtonProps {
 
 /**
  * Sign In Button - redirects to oauth.do login
+ *
+ * Uses oauth.do-specific URL-based redirect for authentication.
  *
  * @example
  * ```tsx
@@ -326,8 +360,84 @@ export function SignOutButton({
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Re-exports
-// ═══════════════════════════════════════════════════════════════════════════
+// ===============================================================================
+// New Components - Re-exported from @mdxui/auth
+// ===============================================================================
 
-export type { User, Impersonator, AuthenticationMethod }
+/**
+ * UserMenu - A customizable user menu component
+ *
+ * Re-exported from @mdxui/auth. Displays user info and provides sign-out functionality.
+ *
+ * @example
+ * ```tsx
+ * import { UserMenu } from 'oauth.do/react'
+ *
+ * function Header() {
+ *   return (
+ *     <UserMenu
+ *       renderTrigger={({ user, initials }) => (
+ *         <button>{user.firstName}</button>
+ *       )}
+ *       renderMenu={({ signOut }) => (
+ *         <button onClick={signOut}>Sign Out</button>
+ *       )}
+ *     />
+ *   )
+ * }
+ * ```
+ */
+export const UserMenu = MdxuiUserMenu
+
+/**
+ * TeamSwitcher - Organization switching component
+ *
+ * Re-exported from @mdxui/auth. Shows WorkOS OrganizationSwitcher widget.
+ *
+ * @example
+ * ```tsx
+ * import { TeamSwitcher } from 'oauth.do/react'
+ *
+ * function Sidebar() {
+ *   return <TeamSwitcher className="my-team-switcher" />
+ * }
+ * ```
+ */
+export const TeamSwitcher = MdxuiTeamSwitcher
+
+/**
+ * OrganizationSwitcher - Lower-level organization switcher widget
+ *
+ * Re-exported from @mdxui/auth. Use with useAuth() for full control.
+ *
+ * @example
+ * ```tsx
+ * import { OrganizationSwitcher, useAuth } from 'oauth.do/react'
+ *
+ * function OrgSwitcher() {
+ *   const { getAccessToken, switchToOrganization } = useAuth()
+ *
+ *   return (
+ *     <OrganizationSwitcher
+ *       authToken={getAccessToken}
+ *       switchToOrganization={({ organizationId }) =>
+ *         switchToOrganization({ organizationId })
+ *       }
+ *     />
+ *   )
+ * }
+ * ```
+ */
+export const OrganizationSwitcher = MdxuiOrganizationSwitcher
+
+// ===============================================================================
+// Type Re-exports
+// ===============================================================================
+
+export type { AuthToken, AuthUser, Impersonator, IdentityProviderProps }
+
+// Re-export User as alias for AuthUser for backward compatibility
+export type User = AuthUser
+
+// Re-export AuthenticationMethod type
+export type AuthenticationMethod = string | null
