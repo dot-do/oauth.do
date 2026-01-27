@@ -52,6 +52,13 @@ export type { DevModeConfig, DevUser, TestHelpers } from './dev.js'
 export { MemoryOAuthStorage } from './storage.js'
 export type { OAuthStorage, ListOptions } from './storage.js'
 
+// DO SQLite Storage (legacy - use CollectionsOAuthStorage instead)
+export { DOSQLiteStorage } from './storage-do.js'
+export type { SqlStorage, SqlStorageResult, OAuthUserWithStripe, SerializedSigningKeyRow } from './storage-do.js'
+
+// Collections-based Storage (preferred - no migrations needed)
+export { CollectionsOAuthStorage } from './storage-collections.js'
+
 // PKCE
 export {
   generateCodeVerifier,
@@ -71,6 +78,44 @@ export {
 // JWT Verification
 export { verifyJWT, decodeJWT, isJWTExpired, clearJWKSCache } from './jwt.js'
 export type { JWTVerifyResult, JWTVerifyOptions, JWTHeader, JWTPayload } from './jwt.js'
+
+// JWT Signing
+export {
+  SigningKeyManager,
+  generateSigningKey,
+  serializeSigningKey,
+  deserializeSigningKey,
+  exportPublicKeyToJWKS,
+  exportKeysToJWKS,
+  signAccessToken,
+} from './jwt-signing.js'
+export type {
+  SigningKey,
+  SerializedSigningKey,
+  JWKSPublicKey,
+  JWKS,
+  AccessTokenClaims,
+} from './jwt-signing.js'
+
+// Stripe Integration
+export {
+  ensureStripeCustomer,
+  getStripeCustomer,
+  linkStripeCustomer,
+  handleStripeWebhook,
+  verifyStripeWebhook,
+  verifyStripeWebhookAsync,
+  createStripeClient,
+} from './stripe.js'
+export type {
+  StripeCustomer,
+  StripeSubscription,
+  StripeWebhookEventType,
+  StripeWebhookEvent,
+  StripeStorage,
+  StripeClient,
+  OAuthUserWithStripe as StripeUser,
+} from './stripe.js'
 
 // Types
 export type {

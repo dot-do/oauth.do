@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@dotdo/collections':
+        specifier: ^0.1.1
+        version: 0.1.1(@cloudflare/workers-types@4.20260124.0)(typescript@5.9.3)
       hono:
         specifier: ^4.7.0
         version: 4.11.5
@@ -26,6 +29,23 @@ packages:
 
   '@cloudflare/workers-types@4.20260124.0':
     resolution: {integrity: sha512-h6TJlew6AtGuEXFc+k5ifalk+tg3fkg0lla6XbMAb2AKKfJGwlFNTwW2xyT/Ha92KY631CIJ+Ace08DPdFohdA==}
+
+  '@dotdo/collections@0.1.1':
+    resolution: {integrity: sha512-lh4QFfsdCFXDNNrUOzlGHcl90bCv/GALVIAoQUngI2RalQ2LMxXhw5WC4KRLTFPFPBENqOaIMq5qiiVeE0mvgQ==}
+    peerDependencies:
+      '@cloudflare/workers-types': ^4.0.0
+    peerDependenciesMeta:
+      '@cloudflare/workers-types':
+        optional: true
+
+  '@dotdo/types@0.1.1':
+    resolution: {integrity: sha512-7khQZk/+aJpzudoFojJiYt01QVjXmBkzwbOZFVgBn2ZPtH8l2/GonQViFsk8tuczthcxV1yzRSp1atI0Vc5XKw==}
+    hasBin: true
+    peerDependencies:
+      typescript: '>=5.0.0'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   '@esbuild/aix-ppc64@0.27.2':
     resolution: {integrity: sha512-GZMB+a0mOMZs4MpDbj8RJp4cw+w1WV5NYD6xzgvzUJ5Ek2jerwfO2eADyI6ExDSUED+1X8aMbegahsJi+8mgpw==}
@@ -575,6 +595,18 @@ packages:
 snapshots:
 
   '@cloudflare/workers-types@4.20260124.0': {}
+
+  '@dotdo/collections@0.1.1(@cloudflare/workers-types@4.20260124.0)(typescript@5.9.3)':
+    dependencies:
+      '@dotdo/types': 0.1.1(typescript@5.9.3)
+    optionalDependencies:
+      '@cloudflare/workers-types': 4.20260124.0
+    transitivePeerDependencies:
+      - typescript
+
+  '@dotdo/types@0.1.1(typescript@5.9.3)':
+    optionalDependencies:
+      typescript: 5.9.3
 
   '@esbuild/aix-ppc64@0.27.2':
     optional: true

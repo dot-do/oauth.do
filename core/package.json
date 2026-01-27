@@ -1,6 +1,6 @@
 {
   "name": "@dotdo/oauth",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "description": "OAuth 2.1 server implementation for MCP - the leaf package with zero dependencies on @dotdo/do or oauth.do",
   "type": "module",
   "main": "./dist/index.js",
@@ -63,6 +63,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
+    "@dotdo/collections": "^0.1.1",
     "hono": "^4.7.0"
   },
   "devDependencies": {
