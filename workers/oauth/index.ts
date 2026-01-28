@@ -22,6 +22,8 @@ export { OAuthDO } from './oauth-do.js'
 interface Env {
   // Durable Object binding
   OAUTH_DO: DurableObjectNamespace<OAuthDO>
+  // Static assets binding
+  ASSETS: Fetcher
   // WorkOS credentials
   WORKOS_CLIENT_ID: string
   WORKOS_API_KEY: string
@@ -102,12 +104,20 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
     return stub.fetch(c.req.raw)
   })
 
+  // POST /login - for server-side OAuth flows (other domains)
   app.post('/login', async (c) => {
     const stub = getOAuthDO(c.env)
     return stub.fetch(c.req.raw)
   })
 
-  app.get('/callback', async (c) => {
+  // Note: GET /login and /callback are handled by the SPA for client-side WorkOS AuthKit
+  // Only handle /api/callback for server-side OAuth flows
+  app.get('/api/callback', async (c) => {
+    const stub = getOAuthDO(c.env)
+    return stub.fetch(c.req.raw)
+  })
+
+  app.get('/api/login', async (c) => {
     const stub = getOAuthDO(c.env)
     return stub.fetch(c.req.raw)
   })
@@ -140,15 +150,6 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
     return stub.fetch(c.req.raw)
   })
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Simple Login (first-party domains)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  app.get('/login', async (c) => {
-    const stub = getOAuthDO(c.env)
-    return stub.fetch(c.req.raw)
-  })
-
   // Logout
   app.post('/logout', (c) => {
     return c.json({ success: true })
@@ -157,6 +158,15 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
   app.get('/logout', (c) => {
     const redirectTo = c.req.query('redirect_to') || '/'
     return c.redirect(redirectTo)
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Static Assets / SPA Fallback
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Serve static assets with SPA fallback (handled by not_found_handling = "single-page-application")
+  app.all('*', async (c) => {
+    return c.env.ASSETS.fetch(c.req.raw)
   })
 
   return app
