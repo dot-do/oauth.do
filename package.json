@@ -1,6 +1,6 @@
 {
   "name": "oauth.do",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "OAuth authentication SDK, React components, and Hono middleware for org.ai identity",
   "type": "module",
   "sideEffects": false,
@@ -100,16 +100,20 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@dotdo/types": "^0.1.1",
+    "@dotdo/oauth": "^0.1.6",
     "keytar": "^7.9.0",
     "open": "^10.1.0"
   },
   "peerDependencies": {
+    "@dotdo/types": ">=0.1.0",
     "hono": ">=4.0.0",
     "itty-router": ">=5.0.0",
     "jose": ">=5.0.0"
   },
   "peerDependenciesMeta": {
+    "@dotdo/types": {
+      "optional": true
+    },
     "hono": {
       "optional": true
     },

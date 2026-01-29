@@ -110,8 +110,16 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
     return stub.fetch(c.req.raw)
   })
 
-  // Note: GET /login and /callback are handled by the SPA for client-side WorkOS AuthKit
-  // Only handle /api/callback for server-side OAuth flows
+  // GET /login - redirect to WorkOS AuthKit for server-side flows (e.g., from collections.do)
+  app.get('/login', async (c) => {
+    const stub = getOAuthDO(c.env)
+    return stub.fetch(c.req.raw)
+  })
+
+  // GET /callback - let SPA handle client-side WorkOS AuthKit flow
+  // (Server-side flows use /api/callback instead)
+
+  // /api/* routes for API-style callbacks
   app.get('/api/callback', async (c) => {
     const stub = getOAuthDO(c.env)
     return stub.fetch(c.req.raw)

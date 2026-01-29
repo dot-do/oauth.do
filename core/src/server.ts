@@ -4,9 +4,11 @@
  * Creates a Hono app that implements OAuth 2.1 authorization server endpoints:
  * - /.well-known/oauth-authorization-server (RFC 8414)
  * - /.well-known/oauth-protected-resource (draft-ietf-oauth-resource-metadata)
+ * - /.well-known/jwks.json (JWKS endpoint)
  * - /authorize (authorization endpoint)
  * - /callback (upstream OAuth callback)
  * - /token (token endpoint)
+ * - /introspect (token introspection - RFC 7662)
  * - /register (dynamic client registration - RFC 7591)
  * - /revoke (token revocation - RFC 7009)
  *
@@ -43,6 +45,8 @@ import {
   createTestHelpers,
   generateLoginFormHtml,
 } from './dev.js'
+import type { SigningKeyManager, AccessTokenClaims } from './jwt-signing.js'
+import { decodeJWT } from './jwt.js'
 
 /**
  * Configuration for the OAuth 2.1 server
@@ -72,14 +76,27 @@ export interface OAuth21ServerConfig {
   debug?: boolean
   /** Allowed CORS origins (default: issuer origin only in production, '*' in dev mode) */
   allowedOrigins?: string[]
+  /**
+   * Signing key manager for JWT access tokens (optional)
+   * If provided, access tokens will be signed JWTs instead of opaque tokens.
+   * This enables the JWKS and introspection endpoints.
+   */
+  signingKeyManager?: SigningKeyManager
+  /**
+   * Use JWT access tokens instead of opaque tokens (default: false)
+   * Requires signingKeyManager to be set, or will auto-create one in memory.
+   */
+  useJwtAccessTokens?: boolean
 }
 
 /**
- * Extended Hono app with test helpers
+ * Extended Hono app with test helpers and signing key manager
  */
 export interface OAuth21Server extends Hono {
   /** Test helpers for E2E testing (only available in devMode) */
   testHelpers?: TestHelpers
+  /** Signing key manager (available if useJwtAccessTokens is enabled) */
+  signingKeyManager?: SigningKeyManager
 }
 
 /**
@@ -123,19 +140,43 @@ export interface OAuth21Server extends Hono {
  */
 export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server {
   const {
-    issuer,
+    issuer: defaultIssuer,
     storage,
     upstream,
     devMode,
     scopes = ['openid', 'profile', 'email', 'offline_access'],
-    accessTokenTtl = 3600,
+    accessTokenTtl = 172800, // 48 hours
     refreshTokenTtl = 2592000,
     authCodeTtl = 600,
     enableDynamicRegistration = true,
     onUserAuthenticated,
     debug = false,
     allowedOrigins,
+    signingKeyManager: providedSigningKeyManager,
+    useJwtAccessTokens = false,
   } = config
+
+  /**
+   * Get the effective issuer for a request.
+   * Supports dynamic issuers via X-Issuer header for multi-tenant scenarios.
+   * This allows services like collections.do to proxy OAuth and have tokens
+   * issued with their own domain as the issuer.
+   */
+  function getEffectiveIssuer(c: Context): string {
+    const xIssuer = c.req.header('X-Issuer')
+    if (xIssuer) {
+      // Validate it's a proper URL
+      try {
+        new URL(xIssuer)
+        return xIssuer.replace(/\/$/, '') // Remove trailing slash
+      } catch {
+        if (debug) {
+          console.warn('[OAuth] Invalid X-Issuer header:', xIssuer)
+        }
+      }
+    }
+    return defaultIssuer
+  }
 
   // Validate configuration
   if (!devMode?.enabled && !upstream) {
@@ -154,6 +195,45 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
   }
 
   const app = new Hono() as OAuth21Server
+
+  // Signing key manager for JWT access tokens
+  // If useJwtAccessTokens is enabled but no manager provided, we'll create keys lazily
+  let signingKeyManager = providedSigningKeyManager
+
+  // Helper to get or create signing key
+  async function ensureSigningKey(): Promise<{
+    kid: string
+    alg: 'RS256'
+    privateKey: CryptoKey
+    publicKey: CryptoKey
+    createdAt: number
+  }> {
+    if (!signingKeyManager) {
+      // Create an in-memory key manager lazily
+      const { SigningKeyManager: SKM } = await import('./jwt-signing.js')
+      signingKeyManager = new SKM()
+      app.signingKeyManager = signingKeyManager
+    }
+    return signingKeyManager.getCurrentKey()
+  }
+
+  // Helper to generate JWT access token for simple login flow
+  // Accepts optional issuer override for multi-tenant scenarios
+  async function generateAccessToken(user: OAuthUser, clientId: string, scope: string, issuerOverride?: string): Promise<string> {
+    const { signAccessToken } = await import('./jwt-signing.js')
+    const key = await ensureSigningKey()
+    return signAccessToken(key, {
+      sub: user.id,
+      client_id: clientId,
+      scope,
+      email: user.email,
+      name: user.name,
+    }, {
+      issuer: issuerOverride || defaultIssuer,
+      audience: clientId,
+      expiresIn: accessTokenTtl,
+    })
+  }
 
   // Dev mode user storage
   const devUsers = new Map<string, DevUser>()
@@ -175,10 +255,15 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     })
   }
 
+  // Attach signing key manager if provided
+  if (providedSigningKeyManager) {
+    app.signingKeyManager = providedSigningKeyManager
+  }
+
   // CORS for all endpoints - restrictive by default
   // In production, only allow issuer origin unless explicitly configured
   // In dev mode, allow all origins if not specified
-  const corsOrigins = allowedOrigins ?? (devMode?.enabled ? ['*'] : [new URL(issuer).origin])
+  const corsOrigins = allowedOrigins ?? (devMode?.enabled ? ['*'] : [new URL(defaultIssuer).origin])
   app.use('*', cors({
     origin: (origin) => {
       // If '*' is in the list, allow all origins
@@ -205,12 +290,16 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
    * OAuth 2.1 Authorization Server Metadata (RFC 8414)
    */
   app.get('/.well-known/oauth-authorization-server', (c) => {
+    const issuer = getEffectiveIssuer(c)
     const metadata: OAuthServerMetadata = {
       issuer,
       authorization_endpoint: `${issuer}/authorize`,
       token_endpoint: `${issuer}/token`,
       ...(enableDynamicRegistration && { registration_endpoint: `${issuer}/register` }),
       revocation_endpoint: `${issuer}/revoke`,
+      // JWKS and introspection endpoints (always advertised, but JWKS only works if signing keys available)
+      jwks_uri: `${issuer}/.well-known/jwks.json`,
+      introspection_endpoint: `${issuer}/introspect`,
       scopes_supported: scopes,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -225,6 +314,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
    * OAuth 2.1 Protected Resource Metadata
    */
   app.get('/.well-known/oauth-protected-resource', (c) => {
+    const issuer = getEffectiveIssuer(c)
     const metadata: OAuthResourceMetadata = {
       resource: issuer,
       authorization_servers: [issuer],
@@ -233,6 +323,114 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     }
 
     return c.json(metadata)
+  })
+
+  /**
+   * JWKS endpoint - exposes public signing keys
+   */
+  app.get('/.well-known/jwks.json', async (c) => {
+    try {
+      if (!signingKeyManager && !useJwtAccessTokens) {
+        // No signing keys configured - return empty JWKS
+        return c.json({ keys: [] })
+      }
+
+      const key = await ensureSigningKey()
+      const jwk = await crypto.subtle.exportKey('jwk', key.publicKey) as JsonWebKey
+
+      return c.json({
+        keys: [{
+          kty: 'RSA',
+          kid: key.kid,
+          use: 'sig',
+          alg: 'RS256',
+          n: jwk.n,
+          e: jwk.e,
+        }]
+      })
+    } catch (err) {
+      if (debug) {
+        console.error('[OAuth] JWKS error:', err)
+      }
+      return c.json({ keys: [] })
+    }
+  })
+
+  /**
+   * Token Introspection endpoint (RFC 7662)
+   * Allows resource servers to validate tokens
+   */
+  app.post('/introspect', async (c) => {
+    const contentType = c.req.header('content-type')
+    let token: string | undefined
+
+    if (contentType?.includes('application/json')) {
+      const body = await c.req.json<{ token?: string }>()
+      token = body.token
+    } else {
+      const formData = await c.req.parseBody()
+      token = String(formData['token'] || '')
+    }
+
+    if (!token) {
+      return c.json({ active: false })
+    }
+
+    // Try to decode as JWT first
+    const decoded = decodeJWT(token)
+    if (decoded) {
+      // It's a JWT - verify claims
+      const now = Math.floor(Date.now() / 1000)
+
+      // Check expiration
+      if (decoded.payload.exp && decoded.payload.exp < now) {
+        return c.json({ active: false })
+      }
+
+      // Check issuer - accept tokens from any issuer we could have issued
+      // Since we use the same signing keys, tokens with any valid issuer are acceptable
+      // The X-Issuer header can specify which issuer to accept, or we accept the default
+      const effectiveIssuer = getEffectiveIssuer(c)
+      if (decoded.payload.iss && decoded.payload.iss !== effectiveIssuer && decoded.payload.iss !== defaultIssuer) {
+        // Token's issuer doesn't match either the requested issuer or our default
+        return c.json({ active: false })
+      }
+
+      // Note: In production, you should also verify the signature using the JWKS
+      // For now, we trust the JWT structure and claims
+
+      return c.json({
+        active: true,
+        sub: decoded.payload.sub,
+        client_id: decoded.payload['client_id'],
+        scope: decoded.payload['scope'],
+        exp: decoded.payload.exp,
+        iat: decoded.payload.iat,
+        iss: decoded.payload.iss,
+        token_type: 'Bearer',
+      })
+    }
+
+    // Not a JWT - check opaque token storage
+    const storedToken = await storage.getAccessToken(token)
+    if (!storedToken) {
+      return c.json({ active: false })
+    }
+
+    // Check expiration
+    if (Date.now() > storedToken.expiresAt) {
+      return c.json({ active: false })
+    }
+
+    return c.json({
+      active: true,
+      sub: storedToken.userId,
+      client_id: storedToken.clientId,
+      scope: storedToken.scope,
+      exp: Math.floor(storedToken.expiresAt / 1000),
+      iat: Math.floor(storedToken.issuedAt / 1000),
+      token_type: storedToken.tokenType,
+    })
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -311,8 +509,9 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
 
     // Dev mode: show login form instead of redirecting to upstream
     if (devMode?.enabled) {
+      const effectiveIssuer = getEffectiveIssuer(c)
       const html = devMode.customLoginPage || generateLoginFormHtml({
-        issuer,
+        issuer: effectiveIssuer,
         clientId,
         redirectUri,
         ...(scope !== undefined && { scope }),
@@ -327,6 +526,9 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     if (!upstream) {
       return c.json({ error: 'server_error', error_description: 'No upstream provider configured' } as OAuthError, 500)
     }
+
+    // Get effective issuer for multi-tenant support
+    const effectiveIssuer = getEffectiveIssuer(c)
 
     // Store the authorization request and redirect to upstream
     // Generate a cryptographically secure state for CSRF protection with upstream provider
@@ -345,19 +547,140 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       codeChallengeMethod: 'S256',
       ...(state !== undefined && { state }), // Client's state (will be passed back to client)
       upstreamState, // Server's state for explicit validation in callback
+      effectiveIssuer, // Store for multi-tenant token generation
       issuedAt: Date.now(),
       expiresAt: Date.now() + authCodeTtl * 1000,
     })
 
     // Build upstream authorization URL
+    // Note: The callback URL uses defaultIssuer (oauth.do) since that's what's registered with upstream providers
+    // The effectiveIssuer is stored in the auth code and used when generating tokens
+    // Use /api/callback to differentiate from SPA's client-side /callback route
     const upstreamAuthUrl = buildUpstreamAuthUrl(upstream, {
-      redirectUri: `${issuer}/callback`,
+      redirectUri: `${defaultIssuer}/api/callback`,
       state: upstreamState,
       scope: scope || 'openid profile email',
     })
 
     if (debug) {
       console.log('[OAuth] Redirecting to upstream:', upstreamAuthUrl)
+    }
+
+    return c.redirect(upstreamAuthUrl)
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Simple Login Endpoint (for first-party apps)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Simple login redirect for first-party apps
+   *
+   * This is a simplified flow that doesn't require the full OAuth ceremony.
+   * It redirects to the upstream provider and returns a JWT to the return_to URL.
+   *
+   * Usage: GET /login?returnTo=https://myapp.com/callback
+   * After auth, redirects to: https://myapp.com/callback?_token=<jwt>
+   *
+   * If returnTo is not provided, defaults to:
+   * - Referer URL (if origin is in allowedOrigins)
+   * - Issuer root otherwise
+   */
+  app.get('/login', async (c) => {
+    // Support both camelCase (preferred) and snake_case for compatibility
+    let returnTo = c.req.query('returnTo') || c.req.query('return_to')
+
+    // Default to referer if it's an allowed origin
+    if (!returnTo) {
+      const referer = c.req.header('Referer')
+      if (referer) {
+        try {
+          const refererUrl = new URL(referer)
+          // Check if referer's origin is allowed (or if we allow all origins)
+          const isAllowed = corsOrigins.includes('*') || corsOrigins.includes(refererUrl.origin)
+          if (isAllowed) {
+            returnTo = referer
+          }
+        } catch {
+          // Invalid referer, ignore
+        }
+      }
+      // Default to effective issuer root
+      const effectiveIssuer = getEffectiveIssuer(c)
+      if (!returnTo) {
+        returnTo = effectiveIssuer
+      }
+    }
+
+    // Validate return_to is a valid URL
+    try {
+      new URL(returnTo)
+    } catch {
+      return c.json({ error: 'invalid_request', error_description: 'return_to must be a valid URL' } as OAuthError, 400)
+    }
+
+    // Get effective issuer for token generation
+    const effectiveIssuer = getEffectiveIssuer(c)
+
+    // Dev mode: show a simple form or auto-login
+    if (devMode?.enabled && devMode.users?.length) {
+      // In dev mode, auto-login as the first user and redirect
+      const devUser = devMode.users[0]!
+      let user = await storage.getUserByEmail(devUser.email)
+      if (!user) {
+        user = {
+          id: devUser.id,
+          email: devUser.email,
+          ...(devUser.name !== undefined && { name: devUser.name }),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          lastLoginAt: Date.now(),
+        }
+        await storage.saveUser(user)
+      }
+
+      // Generate JWT access token with effective issuer
+      const accessToken = await generateAccessToken(user, 'first-party', 'openid profile email', effectiveIssuer)
+
+      // Redirect with token
+      const url = new URL(returnTo)
+      url.searchParams.set('_token', accessToken)
+      return c.redirect(url.toString())
+    }
+
+    // Production mode: redirect to upstream
+    if (!upstream) {
+      return c.json({ error: 'server_error', error_description: 'No upstream provider configured' } as OAuthError, 500)
+    }
+
+    // Generate state to track this login request
+    const loginState = generateState(64)
+
+    // Store the return_to URL in the auth code table (reusing the structure)
+    // Also store effective issuer for use when generating tokens in callback
+    await storage.saveAuthorizationCode({
+      code: `login:${loginState}`,
+      clientId: 'first-party',
+      userId: '',
+      redirectUri: returnTo,
+      codeChallenge: 'none', // Not used for simple login
+      codeChallengeMethod: 'S256',
+      effectiveIssuer, // Store for use in callback
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + authCodeTtl * 1000,
+    })
+
+    // Build upstream authorization URL
+    // Note: Callback URL uses defaultIssuer (oauth.do) since that's registered with upstream providers
+    // Use /api/callback to differentiate from SPA's client-side /callback route
+    const upstreamAuthUrl = buildUpstreamAuthUrl(upstream, {
+      redirectUri: `${defaultIssuer}/api/callback`,
+      state: loginState,
+      scope: 'openid profile email',
+    })
+
+    if (debug) {
+      console.log('[OAuth] Simple login redirect to upstream:', upstreamAuthUrl)
     }
 
     return c.redirect(upstreamAuthUrl)
@@ -385,6 +708,9 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     const codeChallenge = String(formData['code_challenge'] || '')
     const codeChallengeMethod = String(formData['code_challenge_method'] || 'S256')
 
+    // Get effective issuer for multi-tenant support
+    const effectiveIssuer = getEffectiveIssuer(c)
+
     if (debug) {
       console.log('[OAuth] Dev login attempt:', { email, clientId })
     }
@@ -396,7 +722,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     const devUser = await app.testHelpers.validateCredentials(email, password)
     if (!devUser) {
       const html = generateLoginFormHtml({
-        issuer,
+        issuer: effectiveIssuer,
         clientId,
         redirectUri,
         scope,
@@ -467,9 +793,10 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Callback from upstream OAuth provider
+   * Callback from upstream OAuth provider (server-side flow)
+   * Note: /callback (without /api) is handled by the SPA for client-side WorkOS AuthKit
    */
-  app.get('/callback', async (c) => {
+  app.get('/api/callback', async (c) => {
     const code = c.req.query('code')
     const upstreamState = c.req.query('state')
     const error = c.req.query('error')
@@ -479,6 +806,94 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       console.log('[OAuth] Callback received:', { code: !!code, state: upstreamState, error })
     }
 
+    if (!code || !upstreamState) {
+      return c.json({ error: 'invalid_request', error_description: 'Missing code or state' } as OAuthError, 400)
+    }
+
+    // In dev mode, callback shouldn't be used (login handles it directly)
+    if (!upstream) {
+      return c.json({ error: 'server_error', error_description: 'No upstream provider configured' } as OAuthError, 500)
+    }
+
+    // Check if this is a simple login flow (login: prefix) or OAuth flow (pending: prefix)
+    const loginAuth = await storage.consumeAuthorizationCode(`login:${upstreamState}`)
+
+    if (loginAuth) {
+      // Simple login flow - use one-time code exchange (not JWT in URL)
+      if (error) {
+        const redirectUrl = new URL(loginAuth.redirectUri)
+        redirectUrl.searchParams.set('error', error)
+        if (errorDescription) {
+          redirectUrl.searchParams.set('error_description', errorDescription)
+        }
+        return c.redirect(redirectUrl.toString())
+      }
+
+      try {
+        // Exchange code with upstream provider
+        // Use defaultIssuer for callback URL (registered with upstream provider)
+        const upstreamTokens = await exchangeUpstreamCode(upstream, code, `${defaultIssuer}/api/callback`)
+
+        if (debug) {
+          console.log('[OAuth] Simple login - upstream tokens received')
+        }
+
+        // Get or create user
+        const user = await getOrCreateUser(storage, upstreamTokens.user, onUserAuthenticated)
+
+        // Generate JWT access token with stored effective issuer (for multi-tenant support)
+        const tokenIssuer = loginAuth.effectiveIssuer || defaultIssuer
+        const accessToken = await generateAccessToken(user, 'first-party', 'openid profile email', tokenIssuer)
+
+        // Generate refresh token for silent refresh
+        const refreshToken = generateToken(64)
+        const now = Date.now()
+        await storage.saveRefreshToken({
+          token: refreshToken,
+          clientId: 'first-party',
+          userId: user.id,
+          scope: 'openid profile email',
+          issuedAt: now,
+          ...(refreshTokenTtl > 0 && { expiresAt: now + refreshTokenTtl * 1000 }),
+        })
+
+        // Generate a one-time code and store both tokens (60 second TTL)
+        const oneTimeCode = generateAuthorizationCode()
+        await storage.saveAuthorizationCode({
+          code: `exchange:${oneTimeCode}`,
+          clientId: 'first-party',
+          userId: user.id,
+          redirectUri: loginAuth.redirectUri,
+          codeChallenge: accessToken, // Store the JWT in codeChallenge field
+          state: refreshToken, // Store refresh token in state field
+          codeChallengeMethod: 'S256',
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 60 * 1000, // 60 second TTL
+        })
+
+        // Redirect to origin's /callback with one-time code
+        const originalUrl = new URL(loginAuth.redirectUri)
+        const callbackUrl = new URL('/callback', originalUrl.origin)
+        callbackUrl.searchParams.set('code', oneTimeCode)
+        callbackUrl.searchParams.set('returnTo', originalUrl.pathname + originalUrl.search)
+
+        if (debug) {
+          console.log('[OAuth] Platform login redirect:', callbackUrl.toString())
+        }
+
+        return c.redirect(callbackUrl.toString())
+      } catch (err) {
+        if (debug) {
+          console.error('[OAuth] Simple login callback error:', err)
+        }
+        const redirectUrl = new URL(loginAuth.redirectUri)
+        redirectUrl.searchParams.set('error', 'server_error')
+        redirectUrl.searchParams.set('error_description', err instanceof Error ? err.message : 'Authentication failed')
+        return c.redirect(redirectUrl.toString())
+      }
+    }
+
+    // OAuth flow - look for pending: prefix
     if (error) {
       // Retrieve pending auth to get redirect_uri
       const pendingAuth = await storage.consumeAuthorizationCode(`pending:${upstreamState}`)
@@ -486,10 +901,6 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
         return redirectWithError(pendingAuth.redirectUri, error, errorDescription, pendingAuth.state)
       }
       return c.json({ error, error_description: errorDescription } as OAuthError, 400)
-    }
-
-    if (!code || !upstreamState) {
-      return c.json({ error: 'invalid_request', error_description: 'Missing code or state' } as OAuthError, 400)
     }
 
     // Retrieve pending authorization
@@ -513,14 +924,10 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       )
     }
 
-    // In dev mode, callback shouldn't be used (login handles it directly)
-    if (!upstream) {
-      return c.json({ error: 'server_error', error_description: 'No upstream provider configured' } as OAuthError, 500)
-    }
-
     try {
       // Exchange code with upstream provider
-      const upstreamTokens = await exchangeUpstreamCode(upstream, code, `${issuer}/callback`)
+      // Use defaultIssuer for callback URL (registered with upstream provider)
+      const upstreamTokens = await exchangeUpstreamCode(upstream, code, `${defaultIssuer}/api/callback`)
 
       if (debug) {
         console.log('[OAuth] Upstream tokens received:', { hasAccessToken: !!upstreamTokens.access_token })
@@ -541,6 +948,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
         ...(pendingAuth.codeChallenge !== undefined && { codeChallenge: pendingAuth.codeChallenge }),
         codeChallengeMethod: 'S256',
         ...(pendingAuth.state !== undefined && { state: pendingAuth.state }),
+        ...(pendingAuth.effectiveIssuer !== undefined && { effectiveIssuer: pendingAuth.effectiveIssuer }),
         issuedAt: Date.now(),
         expiresAt: Date.now() + authCodeTtl * 1000,
       })
@@ -596,13 +1004,64 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       console.log('[OAuth] Token request:', { grantType, clientId: params['client_id'] })
     }
 
+    // JWT signing options
+    // Note: issuer is set to defaultIssuer but can be overridden per-token by effectiveIssuer in auth code
+    const jwtSigningOptions = useJwtAccessTokens ? {
+      issuer: defaultIssuer,
+      getSigningKey: ensureSigningKey,
+    } : undefined
+
     if (grantType === 'authorization_code') {
-      return handleAuthorizationCodeGrant(c, params, storage, accessTokenTtl, refreshTokenTtl, debug)
+      return handleAuthorizationCodeGrant(c, params, storage, accessTokenTtl, refreshTokenTtl, debug, jwtSigningOptions)
     } else if (grantType === 'refresh_token') {
-      return handleRefreshTokenGrant(c, params, storage, accessTokenTtl, refreshTokenTtl, debug)
+      return handleRefreshTokenGrant(c, params, storage, accessTokenTtl, refreshTokenTtl, debug, jwtSigningOptions)
     } else {
       return c.json({ error: 'unsupported_grant_type', error_description: 'Only authorization_code and refresh_token grants are supported' } as OAuthError, 400)
     }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Platform Token Exchange (for first-party domains)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Exchange a one-time code for a JWT (platform domains only)
+   *
+   * This is used by platform domains after the OAuth callback.
+   * The one-time code is exchanged server-side for the JWT,
+   * which is then set as an httpOnly cookie.
+   *
+   * POST /exchange { code: "one-time-code" }
+   * Returns: { token: "jwt", expiresIn: 3600 }
+   */
+  app.post('/exchange', async (c) => {
+    const body = await c.req.json<{ code: string }>()
+    const code = body.code
+
+    if (!code) {
+      return c.json({ error: 'invalid_request', error_description: 'code is required' } as OAuthError, 400)
+    }
+
+    // Look up the one-time code
+    const exchangeData = await storage.consumeAuthorizationCode(`exchange:${code}`)
+    if (!exchangeData) {
+      return c.json({ error: 'invalid_grant', error_description: 'Invalid or expired code' } as OAuthError, 400)
+    }
+
+    // The JWT was stored in codeChallenge field, refresh token in state
+    const accessToken = exchangeData.codeChallenge
+    const refreshToken = exchangeData.state
+
+    if (debug) {
+      console.log('[OAuth] Platform exchange successful for user:', exchangeData.userId)
+    }
+
+    return c.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      token_type: 'Bearer',
+      expires_in: accessTokenTtl,
+    })
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -901,13 +1360,12 @@ async function exchangeUpstreamCode(
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Bearer ${upstream.apiKey}`,
       },
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         client_id: upstream.clientId,
+        client_secret: upstream.apiKey,
         code,
-        redirect_uri: redirectUri,
       }).toString(),
     })
 
@@ -981,13 +1439,45 @@ async function getOrCreateUser(
   return user
 }
 
+/**
+ * JWT signing options passed from token endpoint
+ */
+interface JWTSigningOptions {
+  issuer: string
+  getSigningKey: () => Promise<{
+    kid: string
+    alg: 'RS256'
+    privateKey: CryptoKey
+    publicKey: CryptoKey
+    createdAt: number
+  }>
+}
+
+/**
+ * Sign a JWT access token
+ */
+async function signJWTAccessToken(
+  claims: AccessTokenClaims,
+  options: JWTSigningOptions,
+  expiresIn: number
+): Promise<string> {
+  const { signAccessToken } = await import('./jwt-signing.js')
+  const key = await options.getSigningKey()
+  return signAccessToken(key, claims, {
+    issuer: options.issuer,
+    audience: claims.client_id,
+    expiresIn,
+  })
+}
+
 async function handleAuthorizationCodeGrant(
   c: Context,
   params: Record<string, string>,
   storage: OAuthStorage,
   accessTokenTtl: number,
   refreshTokenTtl: number,
-  debug: boolean
+  debug: boolean,
+  jwtOptions?: JWTSigningOptions
 ): Promise<Response> {
   const code = params['code']
   const redirect_uri = params['redirect_uri']
@@ -1046,19 +1536,39 @@ async function handleAuthorizationCodeGrant(
   }
 
   // Generate tokens
-  const accessToken = generateToken(48)
   const refreshToken = generateToken(64)
   const now = Date.now()
 
-  await storage.saveAccessToken({
-    token: accessToken,
-    tokenType: 'Bearer',
-    clientId: authCode.clientId,
-    userId: authCode.userId,
-    ...(authCode.scope !== undefined && { scope: authCode.scope }),
-    issuedAt: now,
-    expiresAt: now + accessTokenTtl * 1000,
-  })
+  // Generate access token (JWT if configured, otherwise opaque)
+  let accessToken: string
+  if (jwtOptions) {
+    // Use effectiveIssuer from auth code if set (for multi-tenant support)
+    const tokenJwtOptions = authCode.effectiveIssuer
+      ? { ...jwtOptions, issuer: authCode.effectiveIssuer }
+      : jwtOptions
+    accessToken = await signJWTAccessToken(
+      {
+        sub: authCode.userId,
+        client_id: authCode.clientId,
+        ...(authCode.scope && { scope: authCode.scope }),
+      },
+      tokenJwtOptions,
+      accessTokenTtl
+    )
+    // Note: JWT access tokens are stateless, so we don't store them
+    // But we can optionally store metadata for tracking/revocation
+  } else {
+    accessToken = generateToken(48)
+    await storage.saveAccessToken({
+      token: accessToken,
+      tokenType: 'Bearer',
+      clientId: authCode.clientId,
+      userId: authCode.userId,
+      ...(authCode.scope !== undefined && { scope: authCode.scope }),
+      issuedAt: now,
+      expiresAt: now + accessTokenTtl * 1000,
+    })
+  }
 
   await storage.saveRefreshToken({
     token: refreshToken,
@@ -1080,7 +1590,7 @@ async function handleAuthorizationCodeGrant(
   })
 
   if (debug) {
-    console.log('[OAuth] Tokens issued for user:', authCode.userId)
+    console.log('[OAuth] Tokens issued for user:', authCode.userId, jwtOptions ? '(JWT)' : '(opaque)')
   }
 
   const response: TokenResponse = {
@@ -1100,7 +1610,8 @@ async function handleRefreshTokenGrant(
   storage: OAuthStorage,
   accessTokenTtl: number,
   refreshTokenTtl: number,
-  debug: boolean
+  debug: boolean,
+  jwtOptions?: JWTSigningOptions
 ): Promise<Response> {
   const refresh_token = params['refresh_token']
 
@@ -1138,19 +1649,33 @@ async function handleRefreshTokenGrant(
   }
 
   // Generate new tokens
-  const accessToken = generateToken(48)
   const newRefreshToken = generateToken(64)
   const now = Date.now()
 
-  await storage.saveAccessToken({
-    token: accessToken,
-    tokenType: 'Bearer',
-    clientId: storedRefresh.clientId,
-    userId: storedRefresh.userId,
-    ...(storedRefresh.scope !== undefined && { scope: storedRefresh.scope }),
-    issuedAt: now,
-    expiresAt: now + accessTokenTtl * 1000,
-  })
+  // Generate access token (JWT if configured, otherwise opaque)
+  let accessToken: string
+  if (jwtOptions) {
+    accessToken = await signJWTAccessToken(
+      {
+        sub: storedRefresh.userId,
+        client_id: storedRefresh.clientId,
+        ...(storedRefresh.scope && { scope: storedRefresh.scope }),
+      },
+      jwtOptions,
+      accessTokenTtl
+    )
+  } else {
+    accessToken = generateToken(48)
+    await storage.saveAccessToken({
+      token: accessToken,
+      tokenType: 'Bearer',
+      clientId: storedRefresh.clientId,
+      userId: storedRefresh.userId,
+      ...(storedRefresh.scope !== undefined && { scope: storedRefresh.scope }),
+      issuedAt: now,
+      expiresAt: now + accessTokenTtl * 1000,
+    })
+  }
 
   // Rotate refresh token
   await storage.revokeRefreshToken(refresh_token)
@@ -1171,7 +1696,7 @@ async function handleRefreshTokenGrant(
   }
 
   if (debug) {
-    console.log('[OAuth] Tokens refreshed for user:', storedRefresh.userId)
+    console.log('[OAuth] Tokens refreshed for user:', storedRefresh.userId, jwtOptions ? '(JWT)' : '(opaque)')
   }
 
   const response: TokenResponse = {

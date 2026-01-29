@@ -433,3 +433,268 @@ export function combined(options: {
     return c.json({ error: 'Authentication required' }, 401)
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Browser Detection & Smart Auth Helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Detect if request is from a browser (vs API client like curl, SDK, etc)
+ */
+export function isBrowser(c: Context): boolean {
+  const accept = c.req.header('Accept') || ''
+  const userAgent = c.req.header('User-Agent') || ''
+
+  // Check Accept header - browsers typically accept text/html
+  if (accept.includes('text/html')) return true
+
+  // Check for common browser user agents
+  const browserPatterns = [
+    /Mozilla/i,
+    /Chrome/i,
+    /Safari/i,
+    /Firefox/i,
+    /Edge/i,
+    /Opera/i,
+  ]
+
+  // Exclude known API clients
+  const apiClientPatterns = [
+    /curl/i,
+    /wget/i,
+    /httpie/i,
+    /postman/i,
+    /insomnia/i,
+    /axios/i,
+    /node-fetch/i,
+    /got/i,
+    /undici/i,
+  ]
+
+  const isApiClient = apiClientPatterns.some((p) => p.test(userAgent))
+  if (isApiClient) return false
+
+  return browserPatterns.some((p) => p.test(userAgent))
+}
+
+/**
+ * Return auth error response - redirect for browsers, JSON for API clients
+ */
+function authErrorResponse(c: Context, options: {
+  loginUrl?: string
+  message?: string
+}): Response {
+  const { loginUrl = 'https://oauth.do/login', message = 'Authentication required' } = options
+
+  if (isBrowser(c)) {
+    // Redirect browsers to login with return URL
+    const returnUrl = encodeURIComponent(c.req.url)
+    return c.redirect(`${loginUrl}?return_to=${returnUrl}`)
+  }
+
+  // Return JSON for API clients with helpful info
+  return c.json({
+    error: message,
+    code: 'UNAUTHORIZED',
+    help: {
+      message: 'Authenticate using one of these methods:',
+      methods: {
+        bearer: {
+          header: 'Authorization: Bearer <token>',
+          description: 'JWT token from oauth.do',
+          getToken: 'https://oauth.do/docs/tokens',
+        },
+        apiKey: {
+          header: 'X-API-Key: <key>',
+          description: 'API key for programmatic access',
+          getKey: 'https://oauth.do/settings/api-keys',
+        },
+        cookie: {
+          description: 'Session cookie from browser login',
+          login: loginUrl,
+        },
+      },
+    },
+  }, 401)
+}
+
+/**
+ * Return forbidden response - for insufficient permissions
+ */
+function forbiddenResponse(c: Context, options: {
+  message?: string
+  required?: { roles?: string[]; permissions?: string[] }
+}): Response {
+  const { message = 'Insufficient permissions', required } = options
+
+  return c.json({
+    error: message,
+    code: 'FORBIDDEN',
+    ...(required && { required }),
+  }, 403)
+}
+
+export interface AssertAuthOptions extends AuthOptions {
+  /** Login URL for browser redirects (default: https://oauth.do/login) */
+  loginUrl?: string
+  /** API key verification function */
+  apiKey?: ApiKeyOptions
+  /** Skip auth for certain paths */
+  skip?: (c: Context) => boolean
+}
+
+/**
+ * Assert authentication - smart handling for browsers vs API clients
+ *
+ * - Browsers: Redirect to login page
+ * - API clients: Return 401 JSON with instructions on how to authenticate
+ *
+ * Supports: Cookie, Bearer JWT, X-API-Key
+ *
+ * @example
+ * ```ts
+ * import { Hono } from 'hono'
+ * import { assertAuth } from 'oauth.do/hono'
+ *
+ * const app = new Hono()
+ *
+ * // Protect all routes except public ones
+ * app.use('/*', assertAuth({
+ *   skip: (c) => c.req.path === '/' || c.req.path === '/health',
+ * }))
+ *
+ * app.get('/api/me', (c) => c.json(c.var.user))
+ * ```
+ */
+export function assertAuth(options: AssertAuthOptions = {}): MiddlewareHandler {
+  const { loginUrl = 'https://oauth.do/login', apiKey: apiKeyOptions, skip, ...authOptions } = options
+
+  return async (c, next) => {
+    // Skip if configured
+    if (skip?.(c)) {
+      return next()
+    }
+
+    // Try JWT auth (cookie or bearer header)
+    await auth(authOptions)(c, async () => {})
+    if (c.var.isAuth) {
+      return next()
+    }
+
+    // Try API key
+    if (apiKeyOptions) {
+      const key = c.req.header(apiKeyOptions.headerName || 'X-API-Key')
+      if (key) {
+        const user = await apiKeyOptions.verify(key, c)
+        if (user) {
+          c.set('user', user)
+          c.set('userId', user.id)
+          c.set('isAuth', true)
+          c.set('token', key)
+          return next()
+        }
+      }
+    }
+
+    // Not authenticated - return appropriate response
+    return authErrorResponse(c, { loginUrl })
+  }
+}
+
+export interface AssertRoleOptions extends AssertAuthOptions {
+  /** Required roles (user must have at least one) */
+  roles: string[]
+}
+
+/**
+ * Assert user has one of the required roles
+ *
+ * @example
+ * ```ts
+ * app.use('/admin/*', assertRole({ roles: ['admin', 'superadmin'] }))
+ * ```
+ */
+export function assertRole(options: AssertRoleOptions): MiddlewareHandler {
+  const { roles, ...authOptions } = options
+
+  return async (c, next) => {
+    // First ensure authenticated
+    const authMiddleware = assertAuth(authOptions)
+    const authResult = await authMiddleware(c, async () => {})
+
+    // If auth middleware returned a response, return it
+    if (authResult) return authResult
+
+    // Check if user is authenticated after middleware ran
+    if (!c.var.isAuth || !c.var.user) {
+      return authErrorResponse(c, { loginUrl: authOptions.loginUrl })
+    }
+
+    // Check roles
+    const userRoles = c.var.user.roles || []
+    const hasRole = roles.some((r) => userRoles.includes(r))
+
+    if (!hasRole) {
+      return forbiddenResponse(c, {
+        message: 'Insufficient permissions - required role not found',
+        required: { roles },
+      })
+    }
+
+    return next()
+  }
+}
+
+/**
+ * Assert user is an admin (has 'admin' or 'superadmin' role)
+ *
+ * @example
+ * ```ts
+ * app.use('/admin/*', assertAdmin())
+ * ```
+ */
+export function assertAdmin(options: AssertAuthOptions = {}): MiddlewareHandler {
+  return assertRole({ ...options, roles: ['admin', 'superadmin'] })
+}
+
+export interface AssertPermissionOptions extends AssertAuthOptions {
+  /** Required permissions (user must have all) */
+  permissions: string[]
+}
+
+/**
+ * Assert user has all required permissions
+ *
+ * @example
+ * ```ts
+ * app.use('/api/users/*', assertPermission({ permissions: ['users:read', 'users:write'] }))
+ * ```
+ */
+export function assertPermission(options: AssertPermissionOptions): MiddlewareHandler {
+  const { permissions, ...authOptions } = options
+
+  return async (c, next) => {
+    // First ensure authenticated
+    const authMiddleware = assertAuth(authOptions)
+    const authResult = await authMiddleware(c, async () => {})
+
+    if (authResult) return authResult
+
+    if (!c.var.isAuth || !c.var.user) {
+      return authErrorResponse(c, { loginUrl: authOptions.loginUrl })
+    }
+
+    // Check permissions (must have all)
+    const userPerms = c.var.user.permissions || []
+    const hasAllPerms = permissions.every((p) => userPerms.includes(p))
+
+    if (!hasAllPerms) {
+      return forbiddenResponse(c, {
+        message: 'Insufficient permissions',
+        required: { permissions },
+      })
+    }
+
+    return next()
+  }
+}

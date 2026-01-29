@@ -109,6 +109,8 @@ export interface OAuthAuthorizationCode {
   state?: string
   /** Server's upstream state for validating upstream provider callback */
   upstreamState?: string
+  /** Effective issuer for multi-tenant scenarios (stored from X-Issuer header) */
+  effectiveIssuer?: string
 }
 
 /**
