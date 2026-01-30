@@ -37,6 +37,9 @@ interface Env {
   // Stripe (optional)
   STRIPE_SECRET_KEY?: string
   STRIPE_WEBHOOK_SECRET?: string
+  // Branding for @mdxui/auth app
+  APP_NAME?: string
+  APP_TAGLINE?: string
 }
 
 /**
@@ -77,6 +80,17 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
 
   // Health check
   app.get('/health', (c) => c.json({ status: 'ok', service: 'oauth' }))
+
+  // Runtime config for @mdxui/auth SPA
+  app.get('/auth-config.json', (c) => {
+    return c.json({
+      clientId: c.env.WORKOS_CLIENT_ID,
+      redirectUri: c.env.REDIRECT_URI,
+      appName: c.env.APP_NAME || 'oauth.do',
+      tagline: c.env.APP_TAGLINE || 'Universal Authentication',
+      onUnauthenticated: 'signIn',
+    })
+  })
 
   // ═══════════════════════════════════════════════════════════════════════════
   // OAuth 2.1 Endpoints - Route to Durable Object

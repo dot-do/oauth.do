@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers'
-import { verifyJwtWithFetcher, verifyApiKey, extractToken, extractApiKey } from './verify.js'
-import { AuthError, type AuthUser, type AssertOptions } from './types.js'
+import { type AssertOptions, AuthError, type AuthUser } from './types.js'
+import { extractApiKey, extractToken, verifyApiKey, verifyJwtWithFetcher } from './verify.js'
 
 // JWKS path - fetched via service binding, not public internet
 const JWKS_PATH = '/.well-known/jwks.json'

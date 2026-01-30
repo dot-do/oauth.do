@@ -4,17 +4,18 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "build:web": "cd web && pnpm install && pnpm build",
-    "deploy": "pnpm build:web && wrangler deploy",
+    "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@dotdo/oauth": "workspace:*",
+    "@dotdo/oauth": "^0.1.7",
+    "@mdxui/auth": "^1.5.2",
     "@workos-inc/node": "^7.0.0",
     "hono": "^4.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241230.0",
+    "@types/node": "^25.1.0",
     "typescript": "^5.0.0",
     "wrangler": "^4.0.0"
   }
