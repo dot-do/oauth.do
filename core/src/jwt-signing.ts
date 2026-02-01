@@ -82,8 +82,16 @@ export async function generateSigningKey(kid?: string): Promise<SigningKey> {
     ['sign', 'verify']
   ) as CryptoKeyPair
 
+  if (!kid) {
+    // Derive kid from JWK Thumbprint (RFC 7638) using SHA-256
+    const jwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey) as JsonWebKey
+    const thumbprintInput = JSON.stringify({ e: jwk.e, kty: jwk.kty, n: jwk.n })
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(thumbprintInput))
+    kid = base64UrlEncode(hash).slice(0, 16)
+  }
+
   return {
-    kid: kid || `oauth-do-key-${Date.now()}`,
+    kid,
     alg: 'RS256',
     privateKey: keyPair.privateKey,
     publicKey: keyPair.publicKey,

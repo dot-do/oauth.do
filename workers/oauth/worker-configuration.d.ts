@@ -7,7 +7,6 @@ declare namespace Cloudflare {
 		durableNamespaces: "OAuthDO";
 	}
 	interface Env {
-		OAUTH_STATE: KVNamespace;
 		ASSETS: Fetcher;
 		WORKOS_CLIENT_ID: "client_01JQYTRXK9ZPD8JPJTKDCRB656";
 		REDIRECT_URI: "https://oauth.do/callback";

@@ -10,8 +10,8 @@ import type { User, AuthResult, TokenResponse, StoredTokenData } from './types.j
 async function resolveSecret(value: unknown): Promise<string | null> {
 	if (!value) return null
 	if (typeof value === 'string') return value
-	if (typeof value === 'object' && typeof (value as any).get === 'function') {
-		return await (value as any).get()
+	if (typeof value === 'object' && typeof (value as Record<string, unknown>).get === 'function') {
+		return await (value as { get: () => Promise<string> }).get()
 	}
 	return null
 }
@@ -65,7 +65,7 @@ export async function getUser(token?: string): Promise<AuthResult> {
 export async function login(credentials: {
 	email?: string
 	password?: string
-	[key: string]: any
+	[key: string]: unknown
 }): Promise<AuthResult> {
 	const config = getConfig()
 
@@ -145,10 +145,10 @@ export async function getToken(): Promise<string | null> {
 		// @ts-ignore - cloudflare:workers only available in Workers runtime
 		const { env } = await import('cloudflare:workers')
 
-		const cfAdminToken = await resolveSecret((env as any).DO_ADMIN_TOKEN)
+		const cfAdminToken = await resolveSecret((env as Record<string, unknown>).DO_ADMIN_TOKEN)
 		if (cfAdminToken) return cfAdminToken
 
-		const cfToken = await resolveSecret((env as any).DO_TOKEN)
+		const cfToken = await resolveSecret((env as Record<string, unknown>).DO_TOKEN)
 		if (cfToken) return cfToken
 	} catch {
 		// Not in Workers environment or env not available

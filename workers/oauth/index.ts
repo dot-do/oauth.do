@@ -32,8 +32,6 @@ interface Env {
   REDIRECT_URI: string
   // CORS
   ALLOWED_ORIGINS?: string
-  // KV for legacy state storage
-  OAUTH_STATE?: KVNamespace
   // Stripe (optional)
   STRIPE_SECRET_KEY?: string
   STRIPE_WEBHOOK_SECRET?: string

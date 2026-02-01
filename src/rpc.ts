@@ -35,23 +35,8 @@ export type Service<T> = T
 // ═══════════════════════════════════════════════════════════════════════════
 // Core Types
 // ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Authenticated user information
- */
-export interface AuthUser {
-  /** Unique user ID */
-  id: string
-  /** User email address */
-  email?: string
-  /** Display name */
-  name?: string
-  /** Organization ID (for multi-tenant apps) */
-  organizationId?: string
-  /** User roles (e.g., ['admin', 'user']) */
-  roles?: string[]
-  /** Fine-grained permissions (e.g., ['read:users', 'write:posts']) */
-  permissions?: string[]
+export { type AuthUser } from "./types.js";
+import type { AuthUser } from "./types.js";
 }
 
 /**

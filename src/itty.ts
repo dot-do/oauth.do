@@ -19,16 +19,8 @@ declare const caches: {
 // Types
 // ═══════════════════════════════════════════════════════════════════════════
 
-export interface AuthUser {
-  id: string
-  email?: string
-  name?: string
-  organizationId?: string
-  roles?: string[]
-  permissions?: string[]
-  metadata?: Record<string, unknown>
-}
-
+export { type AuthUser } from "./types.js";
+import type { AuthUser } from "./types.js";
 export interface AuthContext {
   user: AuthUser | null
   userId: string | null

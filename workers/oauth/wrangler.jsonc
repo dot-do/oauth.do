@@ -48,14 +48,6 @@
     }
   ],
 
-  // KV for state storage (legacy, can be removed after migration)
-  "kv_namespaces": [
-    {
-      "binding": "OAUTH_STATE",
-      "id": "1432072dae9c4670885bfea58c264327"
-    }
-  ],
-
   // Rate limiting (free Cloudflare Workers binding)
   "ratelimits": [
     {

@@ -45,7 +45,7 @@ describe('SigningKey generation', () => {
 
   it('generated key has a kid', async () => {
     const key = await generateSigningKey()
-    expect(key.kid).toMatch(/^oauth-do-key-/)
+    expect(key.kid).toMatch(/^[A-Za-z0-9_-]{16}$/)
   })
 
   it('accepts a custom kid', async () => {

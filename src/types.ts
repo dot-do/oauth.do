@@ -103,7 +103,20 @@ export interface User {
 	id: string
 	email?: string
 	name?: string
-	[key: string]: any
+	[key: string]: unknown
+}
+
+/**
+ * Authenticated user information for middleware contexts
+ */
+export interface AuthUser {
+	id: string
+	email?: string
+	name?: string
+	organizationId?: string
+	roles?: string[]
+	permissions?: string[]
+	metadata?: Record<string, unknown>
 }
 
 /**

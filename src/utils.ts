@@ -10,7 +10,8 @@
  */
 export function getEnv(key: string): string | undefined {
 	// Check globalThis first (Workers)
-	if ((globalThis as any)[key]) return (globalThis as any)[key]
+	const global = globalThis as Record<string, unknown>
+	if (typeof global[key] === 'string') return global[key]
 	// Check process.env (Node.js)
 	if (typeof process !== 'undefined' && process.env?.[key]) return process.env[key]
 	return undefined

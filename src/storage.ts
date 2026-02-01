@@ -41,7 +41,7 @@ export class KeychainTokenStorage implements TokenStorage {
 			// Dynamic import to handle cases where keytar native module isn't available
 			const imported = await import('keytar')
 			// Handle ESM/CJS interop - keytar is CommonJS, so functions may be on .default
-			const keytarModule = (imported as any).default || imported
+			const keytarModule = (imported as Record<string, unknown>).default || imported
 			this.keytar = keytarModule as typeof import('keytar')
 
 			// Verify the module loaded correctly by checking for expected function
@@ -89,9 +89,10 @@ export class KeychainTokenStorage implements TokenStorage {
 			}
 
 			await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, token)
-		} catch (error: any) {
+		} catch (error: unknown) {
 			// Check if this is a native module error vs an actual keychain error
-			if (error?.code === 'MODULE_NOT_FOUND' || error?.message?.includes('Cannot find module')) {
+			const err = error instanceof Error ? error : null
+			if ((error as Record<string, unknown>)?.code === 'MODULE_NOT_FOUND' || err?.message?.includes('Cannot find module')) {
 				throw new Error('Keychain storage not available: native module not built')
 			}
 			throw new Error(`Failed to save token to keychain: ${error}`)
