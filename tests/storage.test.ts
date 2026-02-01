@@ -64,11 +64,31 @@ describe('TokenStorage', () => {
 
 		it('should store and retrieve token from localStorage', async () => {
 			await storage.setToken('test-token')
-			expect(global.localStorage.setItem).toHaveBeenCalledWith('oauth.do:token', 'test-token')
+			// Token is stored as JSON for refresh token support
+			expect(global.localStorage.setItem).toHaveBeenCalledWith('oauth.do:token', '{"accessToken":"test-token"}')
 
-			;(global.localStorage.getItem as any).mockReturnValue('test-token')
+			;(global.localStorage.getItem as any).mockReturnValue('{"accessToken":"test-token"}')
 			const token = await storage.getToken()
 			expect(token).toBe('test-token')
+		})
+
+		it('should handle legacy plain text token format', async () => {
+			;(global.localStorage.getItem as any).mockReturnValue('legacy-plain-token')
+			const token = await storage.getToken()
+			expect(token).toBe('legacy-plain-token')
+		})
+
+		it('should store and retrieve full token data with refresh token', async () => {
+			const tokenData = {
+				accessToken: 'access-123',
+				refreshToken: 'refresh-456',
+				expiresAt: Date.now() + 3600000,
+			}
+			await storage.setTokenData(tokenData)
+
+			;(global.localStorage.getItem as any).mockReturnValue(JSON.stringify(tokenData))
+			const retrieved = await storage.getTokenData()
+			expect(retrieved).toEqual(tokenData)
 		})
 
 		it('should remove token from localStorage', async () => {

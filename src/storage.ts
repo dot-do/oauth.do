@@ -112,6 +112,51 @@ export class KeychainTokenStorage implements TokenStorage {
 		}
 	}
 
+	async getTokenData(): Promise<StoredTokenData | null> {
+		const keytar = await this.getKeytar()
+		if (!keytar) {
+			return null
+		}
+
+		try {
+			const stored = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+			if (!stored) {
+				return null
+			}
+
+			// Check if it's JSON format (new format with refresh token)
+			if (stored.startsWith('{')) {
+				return JSON.parse(stored) as StoredTokenData
+			}
+
+			// Legacy plain text format - convert to token data
+			return { accessToken: stored }
+		} catch (error) {
+			if (getEnv('DEBUG')) {
+				console.warn('Failed to get token data from keychain:', error)
+			}
+			return null
+		}
+	}
+
+	async setTokenData(data: StoredTokenData): Promise<void> {
+		const keytar = await this.getKeytar()
+		if (!keytar) {
+			throw new Error('Keychain storage not available')
+		}
+
+		try {
+			// Store as JSON to preserve refresh token and expiration
+			await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, JSON.stringify(data))
+		} catch (error: unknown) {
+			const err = error instanceof Error ? error : null
+			if ((error as Record<string, unknown>)?.code === 'MODULE_NOT_FOUND' || err?.message?.includes('Cannot find module')) {
+				throw new Error('Keychain storage not available: native module not built')
+			}
+			throw new Error(`Failed to save token data to keychain: ${error}`)
+		}
+	}
+
 	/**
 	 * Check if keychain storage is available on this system
 	 */
@@ -353,18 +398,26 @@ export class FileTokenStorage implements TokenStorage {
  * In-memory token storage (for browser or testing)
  */
 export class MemoryTokenStorage implements TokenStorage {
-	private token: string | null = null
+	private tokenData: StoredTokenData | null = null
 
 	async getToken(): Promise<string | null> {
-		return this.token
+		return this.tokenData?.accessToken ?? null
 	}
 
 	async setToken(token: string): Promise<void> {
-		this.token = token
+		this.tokenData = { accessToken: token }
 	}
 
 	async removeToken(): Promise<void> {
-		this.token = null
+		this.tokenData = null
+	}
+
+	async getTokenData(): Promise<StoredTokenData | null> {
+		return this.tokenData
+	}
+
+	async setTokenData(data: StoredTokenData): Promise<void> {
+		this.tokenData = data
 	}
 }
 
@@ -375,17 +428,12 @@ export class LocalStorageTokenStorage implements TokenStorage {
 	private key = 'oauth.do:token'
 
 	async getToken(): Promise<string | null> {
-		if (typeof localStorage === 'undefined') {
-			return null
-		}
-		return localStorage.getItem(this.key)
+		const data = await this.getTokenData()
+		return data?.accessToken ?? null
 	}
 
 	async setToken(token: string): Promise<void> {
-		if (typeof localStorage === 'undefined') {
-			throw new Error('localStorage is not available')
-		}
-		localStorage.setItem(this.key, token)
+		await this.setTokenData({ accessToken: token })
 	}
 
 	async removeToken(): Promise<void> {
@@ -393,6 +441,29 @@ export class LocalStorageTokenStorage implements TokenStorage {
 			return
 		}
 		localStorage.removeItem(this.key)
+	}
+
+	async getTokenData(): Promise<StoredTokenData | null> {
+		if (typeof localStorage === 'undefined') {
+			return null
+		}
+		const stored = localStorage.getItem(this.key)
+		if (!stored) {
+			return null
+		}
+		// Check if it's JSON format
+		if (stored.startsWith('{')) {
+			return JSON.parse(stored) as StoredTokenData
+		}
+		// Legacy plain text format
+		return { accessToken: stored }
+	}
+
+	async setTokenData(data: StoredTokenData): Promise<void> {
+		if (typeof localStorage === 'undefined') {
+			throw new Error('localStorage is not available')
+		}
+		localStorage.setItem(this.key, JSON.stringify(data))
 	}
 }
 
@@ -465,6 +536,44 @@ export class CompositeTokenStorage implements TokenStorage {
 	async removeToken(): Promise<void> {
 		// Remove from both storages to ensure complete logout
 		await Promise.all([this.keychainStorage.removeToken(), this.fileStorage.removeToken()])
+	}
+
+	async getTokenData(): Promise<StoredTokenData | null> {
+		// First, check keychain
+		const keychainData = await this.keychainStorage.getTokenData()
+		if (keychainData) {
+			return keychainData
+		}
+
+		// Fall back to file storage (for migration from old installations)
+		const fileData = await this.fileStorage.getTokenData()
+		if (fileData) {
+			// Migrate token data to keychain if available
+			if (await this.keychainStorage.isAvailable()) {
+				try {
+					await this.keychainStorage.setTokenData(fileData)
+					await this.fileStorage.removeToken()
+					if (getEnv('DEBUG')) {
+						console.log('Migrated token data from file to keychain')
+					}
+				} catch {
+					// Continue with file token if migration fails
+				}
+			}
+			return fileData
+		}
+
+		return null
+	}
+
+	async setTokenData(data: StoredTokenData): Promise<void> {
+		const storage = await this.getPreferredStorage()
+		if (storage.setTokenData) {
+			await storage.setTokenData(data)
+		} else {
+			// Fallback for storages that don't support tokenData
+			await storage.setToken(data.accessToken)
+		}
 	}
 
 	/**
