@@ -202,6 +202,8 @@ export interface OAuthServerMetadata {
   revocation_endpoint?: string
   /** URL of the token introspection endpoint */
   introspection_endpoint?: string
+  /** URL of the userinfo endpoint */
+  userinfo_endpoint?: string
 }
 
 /**

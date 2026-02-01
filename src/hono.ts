@@ -47,10 +47,10 @@ export interface AuthOptions {
   cookieName?: string
   /** Header name for Bearer token (default: 'Authorization') */
   headerName?: string
-  /** WorkOS Client ID (default: oauth.do client ID) */
+  /** WorkOS Client ID for JWT audience verification */
   clientId?: string
-  /** JWKS URI for token verification (default: WorkOS JWKS) */
-  jwksUri?: string
+  /** JWKS URI for token verification (required) */
+  jwksUri: string
   /** Skip auth for certain paths */
   skip?: (c: Context) => boolean
   /** Cache duration for JWKS in seconds (default: 3600) */
@@ -76,11 +76,6 @@ export interface ApiKeyOptions {
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════════════════════════════════
-
-const OAUTH_DO_CONFIG = {
-  clientId: 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
-  jwksUri: 'https://api.workos.com/sso/jwks/client_01JQYTRXK9ZPD8JPJTKDCRB656',
-}
 
 const TOKEN_CACHE_TTL = 5 * 60 // 5 minutes
 const CACHE_URL_PREFIX = 'https://oauth.do/_cache/token/'
@@ -204,7 +199,7 @@ async function getJwks(jwksUri: string, cacheTtl: number): Promise<jose.JWTVerif
  * import { auth } from 'oauth.do/hono'
  *
  * const app = new Hono()
- * app.use('*', auth())
+ * app.use('*', auth({ jwksUri: 'https://api.workos.com/sso/jwks/client_xxx' }))
  *
  * app.get('/api/me', (c) => {
  *   if (!c.var.user) return c.json({ error: 'Not authenticated' }, 401)
@@ -212,15 +207,19 @@ async function getJwks(jwksUri: string, cacheTtl: number): Promise<jose.JWTVerif
  * })
  * ```
  */
-export function auth(options: AuthOptions = {}): MiddlewareHandler {
+export function auth(options: AuthOptions): MiddlewareHandler {
   const {
     cookieName = 'auth',
     headerName = 'Authorization',
-    clientId = OAUTH_DO_CONFIG.clientId,
-    jwksUri = OAUTH_DO_CONFIG.jwksUri,
+    clientId,
+    jwksUri,
     skip,
     jwksCacheTtl = 3600,
   } = options
+
+  if (!jwksUri) {
+    throw new Error('oauth.do auth() middleware requires a "jwksUri" option. Example: auth({ jwksUri: "https://api.workos.com/sso/jwks/<your-client-id>" })')
+  }
 
   return async (c, next) => {
     // Initialize variables
@@ -281,15 +280,15 @@ export function auth(options: AuthOptions = {}): MiddlewareHandler {
  * import { auth, requireAuth } from 'oauth.do/hono'
  *
  * const app = new Hono()
- * app.use('*', auth())
- * app.use('/api/*', requireAuth())
+ * app.use('*', auth({ jwksUri: 'https://api.workos.com/sso/jwks/client_xxx' }))
+ * app.use('/api/*', requireAuth({ jwksUri: 'https://api.workos.com/sso/jwks/client_xxx' }))
  *
  * app.get('/api/secret', (c) => {
  *   return c.json({ secret: 'data', user: c.var.user })
  * })
  * ```
  */
-export function requireAuth(options: RequireAuthOptions = {}): MiddlewareHandler {
+export function requireAuth(options: RequireAuthOptions): MiddlewareHandler {
   const { redirectTo, roles, permissions, ...authOptions } = options
 
   return async (c, next) => {
@@ -566,7 +565,7 @@ export interface AssertAuthOptions extends AuthOptions {
  * app.get('/api/me', (c) => c.json(c.var.user))
  * ```
  */
-export function assertAuth(options: AssertAuthOptions = {}): MiddlewareHandler {
+export function assertAuth(options: AssertAuthOptions): MiddlewareHandler {
   const { loginUrl = 'https://oauth.do/login', apiKey: apiKeyOptions, skip, ...authOptions } = options
 
   return async (c, next) => {
@@ -653,7 +652,7 @@ export function assertRole(options: AssertRoleOptions): MiddlewareHandler {
  * app.use('/admin/*', assertAdmin())
  * ```
  */
-export function assertAdmin(options: AssertAuthOptions = {}): MiddlewareHandler {
+export function assertAdmin(options: AssertAuthOptions): MiddlewareHandler {
   return assertRole({ ...options, roles: ['admin', 'superadmin'] })
 }
 

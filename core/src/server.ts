@@ -10,6 +10,7 @@
  * - /token (token endpoint)
  * - /introspect (token introspection - RFC 7662)
  * - /register (dynamic client registration - RFC 7591)
+ * - /userinfo (OpenID Connect UserInfo)
  * - /revoke (token revocation - RFC 7009)
  *
  * This server acts as a federated OAuth 2.1 server:
@@ -234,6 +235,17 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     return signingKeyManager.getCurrentKey()
   }
 
+  /**
+   * Validate and filter requested scopes against the server's configured scopes.
+   * Returns only the scopes that are allowed, or undefined if no valid scopes.
+   */
+  function validateScopes(requestedScope: string | undefined): string | undefined {
+    if (!requestedScope) return undefined
+    const requested = requestedScope.split(/\s+/).filter(Boolean)
+    const allowed = requested.filter((s) => scopes.includes(s))
+    return allowed.length > 0 ? allowed.join(' ') : undefined
+  }
+
   // Helper to generate JWT access token for simple login flow
   // Accepts optional issuer override for multi-tenant scenarios
   async function generateAccessToken(user: OAuthUser, clientId: string, scope: string, issuerOverride?: string): Promise<string> {
@@ -312,7 +324,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
    */
   app.get('/.well-known/oauth-authorization-server', (c) => {
     const issuer = getEffectiveIssuer(c)
-    const metadata: OAuthServerMetadata = {
+    const metadata = {
       issuer,
       authorization_endpoint: `${issuer}/authorize`,
       token_endpoint: `${issuer}/token`,
@@ -321,6 +333,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       // JWKS and introspection endpoints (always advertised, but JWKS only works if signing keys available)
       jwks_uri: `${issuer}/.well-known/jwks.json`,
       introspection_endpoint: `${issuer}/introspect`,
+      userinfo_endpoint: `${issuer}/userinfo`,
       scopes_supported: scopes,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -546,6 +559,12 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       return redirectWithError(redirectUri, 'invalid_request', 'code_challenge_method must be S256', state)
     }
 
+    // Validate requested scopes against server's configured scopes
+    const grantedScope = validateScopes(scope)
+    if (scope && !grantedScope) {
+      return redirectWithError(redirectUri, 'invalid_scope', 'None of the requested scopes are supported', state)
+    }
+
     // Dev mode: show login form instead of redirecting to upstream
     if (devMode?.enabled) {
       const effectiveIssuer = getEffectiveIssuer(c)
@@ -553,7 +572,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
         issuer: effectiveIssuer,
         clientId,
         redirectUri,
-        ...(scope !== undefined && { scope }),
+        ...(grantedScope !== undefined && { scope: grantedScope }),
         ...(state !== undefined && { state }),
         codeChallenge,
         codeChallengeMethod,
@@ -581,7 +600,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       clientId,
       userId: '', // Will be filled after upstream auth
       redirectUri,
-      ...(scope !== undefined && { scope }),
+      ...(grantedScope !== undefined && { scope: grantedScope }),
       codeChallenge,
       codeChallengeMethod: 'S256',
       ...(state !== undefined && { state }), // Client's state (will be passed back to client)
@@ -598,7 +617,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     const upstreamAuthUrl = buildUpstreamAuthUrl(upstream, {
       redirectUri: `${defaultIssuer}/api/callback`,
       state: upstreamState,
-      scope: scope || 'openid profile email',
+      scope: grantedScope || 'openid profile email',
     })
 
     if (debug) {
@@ -797,6 +816,9 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       await onUserAuthenticated(user)
     }
 
+    // Validate and filter scopes
+    const grantedScope = validateScopes(scope)
+
     // Generate authorization code
     const authCode = generateAuthorizationCode()
 
@@ -805,7 +827,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       clientId,
       userId: user.id,
       redirectUri,
-      ...(scope && { scope }),
+      ...(grantedScope && { scope: grantedScope }),
       codeChallenge,
       codeChallengeMethod: 'S256',
       ...(state && { state }),
@@ -1187,6 +1209,102 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       }, 201)
     })
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // UserInfo Endpoint (OpenID Connect)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * OpenID Connect UserInfo endpoint
+   * Returns claims about the authenticated user based on granted scopes.
+   */
+  app.get('/userinfo', async (c) => {
+    const authHeader = c.req.header('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      c.header('WWW-Authenticate', 'Bearer')
+      return c.json({ error: 'invalid_token', error_description: 'Bearer token required' }, 401)
+    }
+
+    const token = authHeader.slice(7)
+    let userId: string | undefined
+    let grantedScope: string | undefined
+
+    // Try JWT first
+    const decoded = decodeJWT(token)
+    if (decoded) {
+      // Verify JWT signature
+      let signatureValid = false
+      if (signingKeyManager || useJwtAccessTokens) {
+        try {
+          const key = await ensureSigningKey()
+          const effectiveIssuer = getEffectiveIssuer(c)
+          const result = await verifyJWT(token, {
+            publicKey: key.publicKey,
+            issuer: decoded.payload.iss === effectiveIssuer ? effectiveIssuer : defaultIssuer,
+          })
+          signatureValid = result.valid
+        } catch {
+          signatureValid = false
+        }
+      }
+
+      if (!signatureValid) {
+        c.header('WWW-Authenticate', 'Bearer error="invalid_token"')
+        return c.json({ error: 'invalid_token', error_description: 'Token verification failed' }, 401)
+      }
+
+      const now = Math.floor(Date.now() / 1000)
+      if (decoded.payload.exp && decoded.payload.exp < now) {
+        c.header('WWW-Authenticate', 'Bearer error="invalid_token"')
+        return c.json({ error: 'invalid_token', error_description: 'Token expired' }, 401)
+      }
+
+      userId = decoded.payload.sub
+      grantedScope = decoded.payload['scope'] as string | undefined
+    } else {
+      // Opaque token - look up in storage
+      const storedToken = await storage.getAccessToken(token)
+      if (!storedToken || Date.now() > storedToken.expiresAt) {
+        c.header('WWW-Authenticate', 'Bearer error="invalid_token"')
+        return c.json({ error: 'invalid_token', error_description: 'Token is invalid or expired' }, 401)
+      }
+      userId = storedToken.userId
+      grantedScope = storedToken.scope
+    }
+
+    if (!userId) {
+      c.header('WWW-Authenticate', 'Bearer error="invalid_token"')
+      return c.json({ error: 'invalid_token', error_description: 'Token has no subject' }, 401)
+    }
+
+    const user = await storage.getUser(userId)
+    if (!user) {
+      c.header('WWW-Authenticate', 'Bearer error="invalid_token"')
+      return c.json({ error: 'invalid_token', error_description: 'User not found' }, 401)
+    }
+
+    // Build claims based on granted scopes
+    const scopeSet = new Set((grantedScope || '').split(/\s+/).filter(Boolean))
+
+    // 'sub' is always returned per OIDC spec
+    const claims: Record<string, unknown> = { sub: user.id }
+
+    // 'profile' scope: name, picture, etc.
+    if (scopeSet.has('profile')) {
+      if (user.name) claims.name = user.name
+      if (user.metadata?.picture) claims.picture = user.metadata.picture
+    }
+
+    // 'email' scope: email, email_verified
+    if (scopeSet.has('email')) {
+      if (user.email) {
+        claims.email = user.email
+        claims.email_verified = true // Upstream provider already verified
+      }
+    }
+
+    return c.json(claims)
+  })
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Token Revocation

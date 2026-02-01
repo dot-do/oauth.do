@@ -21,8 +21,8 @@
 import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
-import type { SessionData, SessionConfig } from './session'
-import { encodeSession, decodeSession, defaultSessionConfig, getSessionConfig } from './session'
+import type { SessionData, SessionConfig } from './session.js'
+import { encodeSession, decodeSession, defaultSessionConfig, getSessionConfig } from './session.js'
 
 // ─────────────────────────────────────────────────────────────────
 // Types

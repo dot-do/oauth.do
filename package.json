@@ -49,6 +49,10 @@
       "require": "./dist/itty.js",
       "default": "./dist/itty.js"
     },
+    "./rpc": {
+      "types": "./dist/rpc.d.ts",
+      "import": "./dist/rpc.js"
+    },
     "./mdx/*": "./src/mdx/*"
   },
   "files": [

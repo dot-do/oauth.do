@@ -78,7 +78,7 @@ describe('hono middleware', () => {
   describe('auth() middleware', () => {
     it('should set user to null when no token provided', async () => {
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.get('/test', (c) => {
         return c.json({
           user: c.var.user,
@@ -104,7 +104,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.get('/test', (c) => {
         return c.json({
           user: c.var.user,
@@ -131,7 +131,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.get('/test', (c) => {
         return c.json({
           user: c.var.user,
@@ -157,7 +157,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth({ cookieName: 'custom_auth' }))
+      app.use('*', auth({ cookieName: 'custom_auth', jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.get('/test', (c) => {
         return c.json({
           token: c.var.token,
@@ -181,7 +181,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.get('/test', (c) => {
         return c.json({
           user: c.var.user,
@@ -214,7 +214,7 @@ describe('hono middleware', () => {
       vi.mocked(jose.jwtVerify).mockRejectedValueOnce(new Error('Invalid JWT'))
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.get('/test', (c) => {
         return c.json({
           user: c.var.user,
@@ -245,7 +245,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.get('/test', (c) => {
         return c.json({ user: c.var.user })
       })
@@ -274,6 +274,7 @@ describe('hono middleware', () => {
       app.use(
         '*',
         auth({
+          jwksUri: 'https://example.com/.well-known/jwks.json',
           skip: (c) => c.req.path === '/public',
         })
       )
@@ -302,7 +303,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.get('/test', (c) => {
         return c.json({ token: c.var.token })
       })
@@ -326,8 +327,8 @@ describe('hono middleware', () => {
   describe('requireAuth() middleware', () => {
     it('should return 401 when not authenticated', async () => {
       const app = new Hono()
-      app.use('*', auth())
-      app.use('/api/*', requireAuth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
+      app.use('/api/*', requireAuth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.get('/api/protected', (c) => {
         return c.json({ success: true })
       })
@@ -341,7 +342,7 @@ describe('hono middleware', () => {
 
     it('should redirect when redirectTo option is set', async () => {
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.use('/api/*', requireAuth({ redirectTo: '/login' }))
       app.get('/api/protected', (c) => {
         return c.json({ success: true })
@@ -363,7 +364,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.use('/admin/*', requireAuth({ roles: ['admin', 'superadmin'] }))
       app.get('/admin/dashboard', (c) => {
         return c.json({ success: true })
@@ -388,7 +389,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.use('/api/*', requireAuth({ permissions: ['read', 'write'] }))
       app.get('/api/data', (c) => {
         return c.json({ success: true })
@@ -413,7 +414,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.use('/admin/*', requireAuth({ roles: ['admin'] }))
       app.get('/admin/dashboard', (c) => {
         return c.json({ success: true, user: c.var.user })
@@ -439,7 +440,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.use('/api/*', requireAuth({ permissions: ['read', 'write'] }))
       app.get('/api/data', (c) => {
         return c.json({ success: true })
@@ -464,7 +465,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.use('/admin/*', requireAuth({ roles: ['admin', 'moderator'] }))
       app.get('/admin/dashboard', (c) => {
         return c.json({ success: true })
@@ -487,7 +488,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.use('/api/*', requireAuth({ permissions: ['read', 'write', 'delete'] }))
       app.get('/api/data', (c) => {
         return c.json({ success: true })
@@ -507,8 +508,8 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      // Not using auth() middleware, only requireAuth()
-      app.use('/api/*', requireAuth())
+      // Not using auth() middleware, only requireAuth({ jwksUri: 'https://example.com/.well-known/jwks.json' })
+      app.use('/api/*', requireAuth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.get('/api/protected', (c) => {
         return c.json({ success: true, user: c.var.user })
       })
@@ -533,7 +534,7 @@ describe('hono middleware', () => {
       } as any)
 
       const app = new Hono()
-      app.use('*', auth())
+      app.use('*', auth({ jwksUri: 'https://example.com/.well-known/jwks.json' }))
       app.use('/admin/*', requireAuth({ roles: ['admin'] }))
       app.get('/admin/dashboard', (c) => {
         return c.json({ success: true })
