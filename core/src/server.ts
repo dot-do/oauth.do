@@ -23,6 +23,7 @@ import type { Context } from 'hono'
 import { cors } from 'hono/cors'
 import type { OAuthStorage } from './storage.js'
 import type {
+  DeviceAuthorizationResponse,
   OAuthServerMetadata,
   OAuthResourceMetadata,
   OAuthClient,
@@ -371,7 +372,8 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       userinfo_endpoint: `${issuer}/userinfo`,
       scopes_supported: scopes,
       response_types_supported: ['code'],
-      grant_types_supported: ['authorization_code', 'refresh_token', 'client_credentials'],
+      device_authorization_endpoint: `${issuer}/device_authorization`,
+      grant_types_supported: ['authorization_code', 'refresh_token', 'client_credentials', 'urn:ietf:params:oauth:grant-type:device_code'],
       token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
       code_challenge_methods_supported: ['S256'],
     }
@@ -1091,6 +1093,11 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       return handleRefreshTokenGrant(c, params, storage, accessTokenTtl, refreshTokenTtl, debug, jwtSigningOptions)
     } else if (grantType === 'client_credentials') {
       return handleClientCredentialsGrant(c, params, storage, accessTokenTtl, debug, jwtSigningOptions)
+    } else if (grantType === 'urn:ietf:params:oauth:grant-type:device_code') {
+      return handleDeviceCodeGrant(c, params, storage, accessTokenTtl, refreshTokenTtl, debug, jwtSigningOptions)
+    } else if (grantType === 'device_code') {
+      // Also accept short form for convenience
+      return handleDeviceCodeGrant(c, params, storage, accessTokenTtl, refreshTokenTtl, debug, jwtSigningOptions)
     } else {
       return c.json({ error: 'unsupported_grant_type', error_description: 'grant_type not supported' } as OAuthError, 400)
     }

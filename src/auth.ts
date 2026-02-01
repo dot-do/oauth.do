@@ -19,13 +19,17 @@ async function resolveSecret(value: unknown): Promise<string | null> {
 /**
  * Get current authenticated user
  * Calls GET /me endpoint
+ * 
+ * When no token is provided, uses getToken() which automatically refreshes
+ * tokens that are close to expiry (within 5 minutes).
  *
- * @param token - Optional authentication token (will use DO_TOKEN env var if not provided)
+ * @param token - Optional authentication token (will use getToken() if not provided)
  * @returns Authentication result with user info or null if not authenticated
  */
 export async function getUser(token?: string): Promise<AuthResult> {
 	const config = getConfig()
-	const authToken = token || getEnv('DO_TOKEN') || ''
+	// Use provided token, or get token with automatic refresh
+	const authToken = token || await getToken()
 
 	if (!authToken) {
 		return { user: null }
@@ -94,11 +98,11 @@ export async function login(credentials: {
  * Logout current user
  * Calls POST /logout endpoint
  *
- * @param token - Optional authentication token (will use DO_TOKEN env var if not provided)
+ * @param token - Optional authentication token (will use getToken() if not provided)
  */
 export async function logout(token?: string): Promise<void> {
 	const config = getConfig()
-	const authToken = token || getEnv('DO_TOKEN') || ''
+	const authToken = token || await getToken()
 
 	if (!authToken) {
 		return
@@ -129,6 +133,11 @@ export async function logout(token?: string): Promise<void> {
  * 2. process.env.DO_ADMIN_TOKEN / DO_TOKEN (Node.js)
  * 3. cloudflare:workers env import (Workers 2025+) - supports secrets store bindings
  * 4. Stored token (keychain/secure file) - with automatic refresh if expired
+ *
+ * Automatic token refresh:
+ * - Tokens are refreshed when within 5 minutes of expiry
+ * - Refresh happens transparently using stored refresh_token
+ * - If refresh fails, falls back to re-authentication flow
  *
  * @see https://developers.cloudflare.com/changelog/2025-03-17-importable-env/
  */
@@ -175,6 +184,7 @@ export async function getToken(): Promise<string | null> {
 
 /**
  * Check if user is authenticated (has valid token)
+ * Automatically refreshes tokens that are close to expiry.
  */
 export async function isAuthenticated(token?: string): Promise<boolean> {
 	const result = await getUser(token)
@@ -189,6 +199,7 @@ export type AuthProvider = () => string | null | undefined | Promise<string | nu
 /**
  * Create an auth provider function for HTTP clients (apis.do, rpc.do)
  * Returns a function that resolves to a token string
+ * Automatically refreshes tokens that are close to expiry.
  *
  * @example
  * import { auth } from 'oauth.do'

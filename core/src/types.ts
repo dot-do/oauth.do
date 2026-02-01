@@ -300,3 +300,50 @@ interface CustomProviderConfig extends UpstreamOAuthConfigBase {
  * Discriminated union based on provider type
  */
 export type UpstreamOAuthConfig = KnownProviderConfig | CustomProviderConfig
+
+/**
+ * OAuth 2.0 Device Authorization Grant (RFC 8628)
+ * Device code issued to clients for input-constrained devices
+ */
+export interface OAuthDeviceCode {
+  /** The device verification code (long, cryptographically secure) */
+  deviceCode: string
+  /** The user code (short, human-readable, e.g., "WDJB-MJHT") */
+  userCode: string
+  /** Client that requested the device code */
+  clientId: string
+  /** Requested scopes */
+  scope?: string
+  /** When the device code was issued */
+  issuedAt: number
+  /** When the device code expires */
+  expiresAt: number
+  /** Polling interval in seconds */
+  interval: number
+  /** User who authorized the request (set when user completes authorization) */
+  userId?: string
+  /** Whether the user has authorized this device */
+  authorized?: boolean
+  /** Whether the user denied authorization */
+  denied?: boolean
+  /** Effective issuer for multi-tenant scenarios */
+  effectiveIssuer?: string
+}
+
+/**
+ * Device Authorization Response (RFC 8628 Section 3.2)
+ */
+export interface DeviceAuthorizationResponse {
+  /** The device verification code */
+  device_code: string
+  /** The end-user verification code */
+  user_code: string
+  /** The end-user verification URI */
+  verification_uri: string
+  /** Optional verification URI with user_code embedded */
+  verification_uri_complete?: string
+  /** Lifetime of device_code and user_code in seconds */
+  expires_in: number
+  /** Minimum polling interval in seconds (default: 5) */
+  interval?: number
+}

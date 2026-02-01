@@ -16,7 +16,7 @@ OAuth authentication SDK and CLI for the .do Platform, wrapping [WorkOS AuthKit]
 import { auth } from 'oauth.do'
 
 const { user, token } = await auth()
-console.log(`Hello, ${user.firstName}!`)
+console.log(`Hello, ${user.name || user.email}!`)
 ```
 
 ## Entry Points
@@ -324,7 +324,7 @@ app.use('/api/*', combined({
 ## Token Storage
 
 ```typescript
-import { createSecureStorage, KeychainTokenStorage } from 'oauth.do'
+import { createSecureStorage, KeychainTokenStorage } from 'oauth.do/node'
 
 // Auto-select best storage (keychain -> secure file)
 const storage = createSecureStorage()
