@@ -94,6 +94,16 @@ export interface OAuth21ServerConfig {
    * If not set, any valid URL is accepted (backwards compatible).
    */
   trustedIssuers?: string[]
+  /**
+   * Require authentication for dynamic client registration (optional)
+   * If true, registration endpoint requires either an admin token or valid Bearer token
+   */
+  requireRegistrationAuth?: boolean
+  /**
+   * Admin token for client registration (optional)
+   * If set, clients can provide this token via x-admin-token header to register
+   */
+  adminToken?: string
 }
 
 /**
@@ -162,6 +172,8 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     signingKeyManager: providedSigningKeyManager,
     useJwtAccessTokens = false,
     trustedIssuers,
+    requireRegistrationAuth = false,
+    adminToken,
   } = config
 
   /**
@@ -1154,6 +1166,32 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
      * Client registration endpoint (RFC 7591)
      */
     app.post('/register', async (c) => {
+      // Check if authentication is required
+      if (requireRegistrationAuth || adminToken) {
+        const xAdminToken = c.req.header('x-admin-token')
+        const authHeader = c.req.header('authorization')
+        let authenticated = false
+
+        // Check admin token
+        if (adminToken && xAdminToken === adminToken) {
+          authenticated = true
+        }
+
+        // Check Bearer token (must be a valid access token)
+        if (!authenticated && authHeader?.startsWith('Bearer ')) {
+          const token = authHeader.slice(7)
+          // Verify it's a valid token in storage
+          const storedToken = await storage.getAccessToken(token)
+          if (storedToken && Date.now() <= storedToken.expiresAt) {
+            authenticated = true
+          }
+        }
+
+        if (!authenticated) {
+          return c.json({ error: 'unauthorized', error_description: 'Authentication required for client registration' } as OAuthError, 401)
+        }
+      }
+
       const body = await c.req.json<{
         client_name: string
         redirect_uris: string[]
