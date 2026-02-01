@@ -711,7 +711,8 @@ describe('Login Module', () => {
 			vi.mocked(authorizeDevice).mockResolvedValue(mockDeviceResponse)
 			vi.mocked(pollForTokens).mockResolvedValue(mockTokenResponse)
 
-			const open = await import('open')
+			// Use the already-mocked import (don't dynamically import - that bypasses mock!)
+			const open = await vi.importMock<typeof import('open')>('open')
 
 			await ensureLoggedIn({
 				storage: mockStorage,
@@ -743,7 +744,8 @@ describe('Login Module', () => {
 			vi.mocked(authorizeDevice).mockResolvedValue(mockDeviceResponse)
 			vi.mocked(pollForTokens).mockResolvedValue(mockTokenResponse)
 
-			const open = await import('open')
+			// Use the already-mocked import
+			const open = await vi.importMock<typeof import('open')>('open')
 			vi.mocked(open.default).mockClear()
 
 			await ensureLoggedIn({
