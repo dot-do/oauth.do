@@ -28,13 +28,9 @@ export type {
 
 // Storage utilities
 export {
-	FileTokenStorage,
-	SecureFileTokenStorage,
-	KeychainTokenStorage,
 	MemoryTokenStorage,
 	LocalStorageTokenStorage,
 	CompositeTokenStorage,
-	createSecureStorage,
 } from './storage.js'
 
 // Types

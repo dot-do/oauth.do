@@ -70,6 +70,64 @@ function getOAuthDO(env: Env): DurableObjectStub<OAuthDO> {
 }
 
 /**
+ * API key validation result
+ */
+interface ApiKeyValidationResult {
+  valid: boolean
+  id?: string
+  name?: string
+  organization_id?: string
+  permissions?: string[]
+  error?: string
+}
+
+/**
+ * Validate a WorkOS API key (sk_...) against the WorkOS API
+ *
+ * Shared logic used by both the HTTP endpoint and RPC method.
+ */
+async function validateWorkosApiKey(apiKey: string, workosApiKey: string): Promise<ApiKeyValidationResult> {
+  if (!apiKey || !apiKey.startsWith('sk_')) {
+    return { valid: false, error: 'Invalid API key format' }
+  }
+
+  try {
+    const response = await fetch('https://api.workos.com/api_keys/validations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${workosApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ value: apiKey }),
+    })
+
+    if (!response.ok) {
+      return { valid: false, error: 'API key validation failed' }
+    }
+
+    const data = await response.json() as {
+      id: string
+      name: string
+      organization_id?: string
+      permissions?: string[]
+      created_at: string
+      last_used_at?: string
+    }
+
+    return {
+      valid: true,
+      id: data.id,
+      name: data.name,
+      organization_id: data.organization_id,
+      permissions: data.permissions || [],
+    }
+  } catch (err) {
+    console.error('API key validation error:', err)
+    return { valid: false, error: 'Validation request failed' }
+  }
+}
+
+/**
  * Create the Hono app for HTTP routing
  */
 function createApp(env: Env): Hono<{ Bindings: Env }> {
@@ -195,47 +253,9 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
   // API Key validation endpoint - validates WorkOS API keys (sk_...)
   app.post('/validate-api-key', async (c) => {
     const body = await c.req.json<{ value: string }>()
-    const apiKey = body.value
-
-    if (!apiKey || !apiKey.startsWith('sk_')) {
-      return c.json({ valid: false, error: 'Invalid API key format' }, 400)
-    }
-
-    try {
-      // Call WorkOS API to validate the API key
-      const response = await fetch('https://api.workos.com/api_keys/validations', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${c.env.WORKOS_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ value: apiKey }),
-      })
-
-      if (!response.ok) {
-        return c.json({ valid: false, error: 'API key validation failed' }, 401)
-      }
-
-      const data = await response.json() as {
-        id: string
-        name: string
-        organization_id?: string
-        permissions?: string[]
-        created_at: string
-        last_used_at?: string
-      }
-
-      return c.json({
-        valid: true,
-        id: data.id,
-        name: data.name,
-        organization_id: data.organization_id,
-        permissions: data.permissions || [],
-      })
-    } catch (err) {
-      console.error('API key validation error:', err)
-      return c.json({ valid: false, error: 'Validation request failed' }, 500)
-    }
+    const result = await validateWorkosApiKey(body.value, c.env.WORKOS_API_KEY)
+    const status = !result.valid ? (result.error === 'Invalid API key format' ? 400 : result.error === 'Validation request failed' ? 500 : 401) : 200
+    return c.json(result, status)
   })
 
   // Logout
@@ -377,52 +397,7 @@ export default class OAuthWorker extends WorkerEntrypoint<Env> {
    * @param apiKey - The API key to validate (sk_...)
    * @returns Validation response with key details or error
    */
-  async validateApiKey(apiKey: string): Promise<{
-    valid: boolean
-    id?: string
-    name?: string
-    organization_id?: string
-    permissions?: string[]
-    error?: string
-  }> {
-    if (!apiKey || !apiKey.startsWith('sk_')) {
-      return { valid: false, error: 'Invalid API key format' }
-    }
-
-    try {
-      // Call WorkOS API to validate the API key
-      const response = await fetch('https://api.workos.com/api_keys/validations', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.env.WORKOS_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ value: apiKey }),
-      })
-
-      if (!response.ok) {
-        return { valid: false, error: 'API key validation failed' }
-      }
-
-      const data = await response.json() as {
-        id: string
-        name: string
-        organization_id?: string
-        permissions?: string[]
-        created_at: string
-        last_used_at?: string
-      }
-
-      return {
-        valid: true,
-        id: data.id,
-        name: data.name,
-        organization_id: data.organization_id,
-        permissions: data.permissions || [],
-      }
-    } catch (err) {
-      console.error('API key validation error:', err)
-      return { valid: false, error: 'Validation request failed' }
-    }
+  async validateApiKey(apiKey: string): Promise<ApiKeyValidationResult> {
+    return validateWorkosApiKey(apiKey, this.env.WORKOS_API_KEY)
   }
 }

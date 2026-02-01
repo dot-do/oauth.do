@@ -16,9 +16,10 @@ export * from './index.js'
 export { ensureLoggedIn, forceLogin, ensureLoggedOut } from './login.js'
 export type { LoginOptions, LoginResult, OAuthProvider } from './login.js'
 
-// Node.js-only storage (uses keytar for OS keychain)
+// Node.js-only storage (uses keytar, fs, path, os)
 export {
-	KeychainTokenStorage,
+	FileTokenStorage,
 	SecureFileTokenStorage,
+	KeychainTokenStorage,
 	createSecureStorage,
 } from './storage.js'

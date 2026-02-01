@@ -225,6 +225,21 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     )
   }
 
+  /** Check if a redirect URI requires HTTPS (production enforcement) */
+  function validateRedirectUriScheme(uri: string): string | null {
+    if (devMode?.enabled) return null
+    try {
+      const parsed = new URL(uri)
+      const host = parsed.hostname
+      if (parsed.protocol === 'http:' && host !== 'localhost' && host !== '127.0.0.1') {
+        return 'redirect_uri must use HTTPS (except for localhost development)'
+      }
+    } catch {
+      // URL parsing errors are handled elsewhere
+    }
+    return null
+  }
+
   const app = new Hono() as OAuth21Server
 
   // Signing key manager for JWT access tokens
@@ -532,6 +547,12 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       new URL(redirectUri)
     } catch {
       return c.json({ error: 'invalid_request', error_description: 'redirect_uri must be a valid URL' } as OAuthError, 400)
+    }
+
+    // Enforce HTTPS for redirect URIs in production
+    const schemeError = validateRedirectUriScheme(redirectUri)
+    if (schemeError) {
+      return c.json({ error: 'invalid_request', error_description: schemeError } as OAuthError, 400)
     }
 
     if (!client.redirectUris.includes(redirectUri)) {
@@ -1183,6 +1204,14 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
 
       if (!body.redirect_uris || body.redirect_uris.length === 0) {
         return c.json({ error: 'invalid_client_metadata', error_description: 'redirect_uris is required' } as OAuthError, 400)
+      }
+
+      // Enforce HTTPS for redirect URIs in production
+      for (const uri of body.redirect_uris) {
+        const schemeErr = validateRedirectUriScheme(uri)
+        if (schemeErr) {
+          return c.json({ error: 'invalid_client_metadata', error_description: schemeErr } as OAuthError, 400)
+        }
       }
 
       // Generate client credentials
