@@ -1,0 +1,46 @@
+/**
+ * OAuth endpoint handlers
+ *
+ * Re-exports all endpoint handlers for clean imports
+ */
+
+// Authorization endpoints
+export {
+  createAuthorizeHandler,
+  createLoginGetHandler,
+  createLoginPostHandler,
+  createCallbackHandler,
+  createExchangeHandler,
+  type AuthorizeHandlerConfig,
+} from './authorize.js'
+
+// Token endpoints
+export {
+  authenticateClient,
+  handleAuthorizationCodeGrant,
+  handleRefreshTokenGrant,
+  handleClientCredentialsGrant,
+  handleDeviceCodeGrant,
+  type ClientAuthResult,
+  type JWTSigningOptions,
+} from './token.js'
+
+// Device Authorization Grant (RFC 8628)
+export {
+  createDeviceAuthorizationHandler,
+  createDeviceGetHandler,
+  createDevicePostHandler,
+  type DeviceHandlerConfig,
+} from './device.js'
+
+// UserInfo endpoint (OIDC)
+export { createUserInfoHandler, type UserInfoHandlerConfig } from './userinfo.js'
+
+// Dynamic client registration (RFC 7591)
+export { createRegisterHandler, type RegisterHandlerConfig } from './register.js'
+
+// Token introspection (RFC 7662)
+export { createIntrospectHandler, type IntrospectHandlerConfig } from './introspect.js'
+
+// Token revocation (RFC 7009)
+export { createRevokeHandler, type RevokeHandlerConfig } from './revoke.js'

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createOAuth21Server, MemoryOAuthStorage, generateCodeChallenge, generateCodeVerifier } from './index'
 
 describe('OAuth 2.1 Server E2E Flow', () => {
@@ -979,6 +979,532 @@ describe('OAuth 2.1 Server E2E Flow', () => {
         expect(refreshResponse.status).toBe(200)
         const newTokens = await refreshResponse.json()
         expect(newTokens.access_token).toBeDefined()
+      })
+    })
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Device Authorization Grant (RFC 8628)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('Device Authorization Grant (RFC 8628)', () => {
+    let clientId: string
+
+    beforeEach(async () => {
+      // Register a client for device authorization tests
+      const regResponse = await server.request('/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: 'Device Client',
+          redirect_uris: ['https://example.com/callback'],
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          token_endpoint_auth_method: 'none'
+        })
+      })
+      const client = await regResponse.json()
+      clientId = client.client_id
+    })
+
+    describe('Metadata Advertisement', () => {
+      it('should advertise device_authorization_endpoint in metadata', async () => {
+        const response = await server.request('/.well-known/oauth-authorization-server')
+        expect(response.status).toBe(200)
+
+        const metadata = await response.json()
+        expect(metadata.device_authorization_endpoint).toBe('https://test.mcp.do/device_authorization')
+        expect(metadata.grant_types_supported).toContain('urn:ietf:params:oauth:grant-type:device_code')
+      })
+    })
+
+    describe('Device Code Issuance', () => {
+      it('should issue device code with valid client_id', async () => {
+        const response = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId,
+            scope: 'openid profile'
+          }).toString()
+        })
+
+        expect(response.status).toBe(200)
+        const data = await response.json()
+
+        // Verify RFC 8628 response format
+        expect(data.device_code).toBeDefined()
+        expect(data.device_code.length).toBe(64)
+        expect(data.user_code).toBeDefined()
+        expect(data.user_code).toMatch(/^[A-Z]{4}-[A-Z]{4}$/)
+        expect(data.verification_uri).toBe('https://test.mcp.do/device')
+        expect(data.verification_uri_complete).toBe(`https://test.mcp.do/device?user_code=${data.user_code}`)
+        expect(data.expires_in).toBe(600)
+        expect(data.interval).toBe(5)
+      })
+
+      it('should accept JSON content type', async () => {
+        const response = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_id: clientId,
+            scope: 'openid'
+          })
+        })
+
+        expect(response.status).toBe(200)
+        const data = await response.json()
+        expect(data.device_code).toBeDefined()
+      })
+
+      it('should reject request without client_id', async () => {
+        const response = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            scope: 'openid'
+          }).toString()
+        })
+
+        expect(response.status).toBe(400)
+        const error = await response.json()
+        expect(error.error).toBe('invalid_request')
+        expect(error.error_description).toContain('client_id')
+      })
+
+      it('should reject request with invalid client_id', async () => {
+        const response = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: 'invalid-client'
+          }).toString()
+        })
+
+        expect(response.status).toBe(400)
+        const error = await response.json()
+        expect(error.error).toBe('invalid_client')
+      })
+
+      it('should generate user codes with unambiguous characters', async () => {
+        // Request multiple codes and verify they only contain allowed characters
+        const allowedChars = 'BCDFGHJKLMNPQRSTVWXZ'
+
+        for (let i = 0; i < 5; i++) {
+          const response = await server.request('/device_authorization', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              client_id: clientId
+            }).toString()
+          })
+
+          const data = await response.json()
+          const codeWithoutDash = data.user_code.replace('-', '')
+
+          for (const char of codeWithoutDash) {
+            expect(allowedChars).toContain(char)
+          }
+        }
+      })
+    })
+
+    describe('User Verification Page', () => {
+      it('should show verification form on GET /device', async () => {
+        const response = await server.request('/device')
+        expect(response.status).toBe(200)
+
+        const html = await response.text()
+        expect(html).toContain('Connect a Device')
+        expect(html).toContain('user_code')
+        expect(html).toContain('form')
+      })
+
+      it('should pre-fill user_code from query parameter', async () => {
+        const response = await server.request('/device?user_code=ABCD-EFGH')
+        expect(response.status).toBe(200)
+
+        const html = await response.text()
+        expect(html).toContain('ABCD-EFGH')
+      })
+
+      it('should show error for invalid user_code', async () => {
+        const response = await server.request('/device', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            user_code: 'INVALID',
+            action: 'verify'
+          }).toString()
+        })
+
+        expect(response.status).toBe(400)
+        const html = await response.text()
+        expect(html).toContain('Invalid code')
+      })
+
+      it('should show authorization page for valid user_code', async () => {
+        // First, get a device code
+        const deviceResponse = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId,
+            scope: 'openid profile'
+          }).toString()
+        })
+        const deviceData = await deviceResponse.json()
+
+        // Then verify the user_code
+        const verifyResponse = await server.request('/device', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            user_code: deviceData.user_code,
+            action: 'verify'
+          }).toString()
+        })
+
+        expect(verifyResponse.status).toBe(200)
+        const html = await verifyResponse.text()
+        expect(html).toContain('Authorize Device')
+        expect(html).toContain('Device Client')
+        expect(html).toContain('authorize')
+        expect(html).toContain('deny')
+      })
+    })
+
+    describe('Token Endpoint - Device Code Grant', () => {
+      it('should return authorization_pending while waiting for user', async () => {
+        // Get device code
+        const deviceResponse = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId
+          }).toString()
+        })
+        const deviceData = await deviceResponse.json()
+
+        // Poll for token without user authorization
+        const tokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: deviceData.device_code,
+            client_id: clientId
+          }).toString()
+        })
+
+        expect(tokenResponse.status).toBe(400)
+        const error = await tokenResponse.json()
+        expect(error.error).toBe('authorization_pending')
+      })
+
+      it('should return slow_down if polling too fast', async () => {
+        // Get device code
+        const deviceResponse = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId
+          }).toString()
+        })
+        const deviceData = await deviceResponse.json()
+
+        // First poll
+        await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: deviceData.device_code,
+            client_id: clientId
+          }).toString()
+        })
+
+        // Immediate second poll (too fast)
+        const tokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: deviceData.device_code,
+            client_id: clientId
+          }).toString()
+        })
+
+        expect(tokenResponse.status).toBe(400)
+        const error = await tokenResponse.json()
+        expect(error.error).toBe('slow_down')
+      })
+
+      it('should return access_denied if user denied', async () => {
+        // Get device code
+        const deviceResponse = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId
+          }).toString()
+        })
+        const deviceData = await deviceResponse.json()
+
+        // User denies authorization
+        await server.request('/device', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            user_code: deviceData.user_code,
+            action: 'deny'
+          }).toString()
+        })
+
+        // Poll for token
+        const tokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: deviceData.device_code,
+            client_id: clientId
+          }).toString()
+        })
+
+        expect(tokenResponse.status).toBe(400)
+        const error = await tokenResponse.json()
+        expect(error.error).toBe('access_denied')
+      })
+
+      it('should return expired_token if device code expired', async () => {
+        // Manually create an expired device code via storage
+        const expiredDeviceCode = {
+          deviceCode: 'expired-device-code-12345',
+          userCode: 'WXYZ-BCDF',
+          clientId,
+          issuedAt: Date.now() - 700000, // 700 seconds ago
+          expiresAt: Date.now() - 100000, // Expired 100 seconds ago
+          interval: 5
+        }
+        await storage.saveDeviceCode(expiredDeviceCode)
+
+        // Poll for token
+        const tokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: 'expired-device-code-12345',
+            client_id: clientId
+          }).toString()
+        })
+
+        expect(tokenResponse.status).toBe(400)
+        const error = await tokenResponse.json()
+        expect(error.error).toBe('expired_token')
+      })
+
+      it('should return tokens once user authorizes', async () => {
+        // Get device code
+        const deviceResponse = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId,
+            scope: 'openid profile'
+          }).toString()
+        })
+        const deviceData = await deviceResponse.json()
+
+        // User authorizes
+        await server.request('/device', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            user_code: deviceData.user_code,
+            action: 'authorize'
+          }).toString()
+        })
+
+        // Poll for token
+        const tokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: deviceData.device_code,
+            client_id: clientId
+          }).toString()
+        })
+
+        expect(tokenResponse.status).toBe(200)
+        const tokens = await tokenResponse.json()
+        expect(tokens.access_token).toBeDefined()
+        expect(tokens.refresh_token).toBeDefined()
+        expect(tokens.token_type).toBe('Bearer')
+        expect(tokens.expires_in).toBe(3600)
+        expect(tokens.scope).toBe('openid profile')
+      })
+
+      it('should accept short form grant_type=device_code', async () => {
+        // Get device code
+        const deviceResponse = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId
+          }).toString()
+        })
+        const deviceData = await deviceResponse.json()
+
+        // User authorizes
+        await server.request('/device', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            user_code: deviceData.user_code,
+            action: 'authorize'
+          }).toString()
+        })
+
+        // Poll for token using short form grant_type
+        const tokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'device_code', // Short form
+            device_code: deviceData.device_code,
+            client_id: clientId
+          }).toString()
+        })
+
+        expect(tokenResponse.status).toBe(200)
+        const tokens = await tokenResponse.json()
+        expect(tokens.access_token).toBeDefined()
+      })
+
+      it('should reject request without device_code', async () => {
+        const tokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            client_id: clientId
+          }).toString()
+        })
+
+        expect(tokenResponse.status).toBe(400)
+        const error = await tokenResponse.json()
+        expect(error.error).toBe('invalid_request')
+        expect(error.error_description).toContain('device_code')
+      })
+
+      it('should reject request without client_id', async () => {
+        const tokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: 'some-device-code'
+          }).toString()
+        })
+
+        expect(tokenResponse.status).toBe(400)
+        const error = await tokenResponse.json()
+        expect(error.error).toBe('invalid_request')
+        expect(error.error_description).toContain('client_id')
+      })
+
+      it('should reject request with mismatched client_id', async () => {
+        // Get device code with one client
+        const deviceResponse = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId
+          }).toString()
+        })
+        const deviceData = await deviceResponse.json()
+
+        // Register another client
+        const otherClientResponse = await server.request('/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_name: 'Other Client',
+            redirect_uris: ['https://other.example.com/callback'],
+            grant_types: ['authorization_code'],
+            response_types: ['code'],
+            token_endpoint_auth_method: 'none'
+          })
+        })
+        const otherClient = await otherClientResponse.json()
+
+        // Try to use device code with different client
+        const tokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: deviceData.device_code,
+            client_id: otherClient.client_id
+          }).toString()
+        })
+
+        expect(tokenResponse.status).toBe(400)
+        const error = await tokenResponse.json()
+        expect(error.error).toBe('invalid_grant')
+      })
+
+      it('should clean up device code after successful token issuance', async () => {
+        // Get device code
+        const deviceResponse = await server.request('/device_authorization', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId
+          }).toString()
+        })
+        const deviceData = await deviceResponse.json()
+
+        // User authorizes
+        await server.request('/device', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            user_code: deviceData.user_code,
+            action: 'authorize'
+          }).toString()
+        })
+
+        // First token request - should succeed
+        const tokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: deviceData.device_code,
+            client_id: clientId
+          }).toString()
+        })
+        expect(tokenResponse.status).toBe(200)
+
+        // Second token request with same device code - should fail
+        const secondTokenResponse = await server.request('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            device_code: deviceData.device_code,
+            client_id: clientId
+          }).toString()
+        })
+
+        expect(secondTokenResponse.status).toBe(400)
+        const error = await secondTokenResponse.json()
+        expect(error.error).toBe('invalid_grant')
       })
     })
   })

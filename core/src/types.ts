@@ -328,6 +328,8 @@ export interface OAuthDeviceCode {
   denied?: boolean
   /** Effective issuer for multi-tenant scenarios */
   effectiveIssuer?: string
+  /** Last time the client polled for token (for slow_down enforcement) */
+  lastPollTime?: number
 }
 
 /**
