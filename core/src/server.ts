@@ -1559,6 +1559,34 @@ function buildUpstreamAuthUrl(
     return url.toString()
   }
 
+  if (upstream.provider === 'auth0') {
+    // Auth0 requires authorizationEndpoint to be set (e.g., https://mytenant.auth0.com/authorize)
+    if (!upstream.authorizationEndpoint) {
+      throw new Error('authorizationEndpoint is required for Auth0 (e.g., https://mytenant.auth0.com/authorize)')
+    }
+    const url = new URL(upstream.authorizationEndpoint)
+    url.searchParams.set('client_id', upstream.clientId)
+    url.searchParams.set('redirect_uri', params.redirectUri)
+    url.searchParams.set('response_type', 'code')
+    url.searchParams.set('state', params.state)
+    url.searchParams.set('scope', params.scope || 'openid profile email')
+    return url.toString()
+  }
+
+  if (upstream.provider === 'okta') {
+    // Okta requires authorizationEndpoint to be set (e.g., https://dev-123456.okta.com/oauth2/v1/authorize)
+    if (!upstream.authorizationEndpoint) {
+      throw new Error('authorizationEndpoint is required for Okta (e.g., https://dev-123456.okta.com/oauth2/v1/authorize)')
+    }
+    const url = new URL(upstream.authorizationEndpoint)
+    url.searchParams.set('client_id', upstream.clientId)
+    url.searchParams.set('redirect_uri', params.redirectUri)
+    url.searchParams.set('response_type', 'code')
+    url.searchParams.set('state', params.state)
+    url.searchParams.set('scope', params.scope || 'openid profile email')
+    return url.toString()
+  }
+
   // Custom provider
   if (!upstream.authorizationEndpoint) {
     throw new Error('authorizationEndpoint is required for custom providers')
@@ -1585,6 +1613,108 @@ interface UpstreamUser {
   role?: string
   roles?: string[]
   permissions?: string[]
+}
+
+/**
+ * Fetch user info from Auth0 userinfo endpoint
+ */
+async function fetchAuth0UserInfo(
+  accessToken: string,
+  authorizationEndpoint: string
+): Promise<UpstreamUser> {
+  // Derive userinfo endpoint from authorization endpoint
+  // e.g., https://mytenant.auth0.com/authorize -> https://mytenant.auth0.com/userinfo
+  const baseUrl = new URL(authorizationEndpoint)
+  const userinfoUrl = `${baseUrl.origin}/userinfo`
+
+  const response = await fetch(userinfoUrl, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`Auth0 userinfo failed: ${response.status} - ${error}`)
+  }
+
+  const userInfo = await response.json() as {
+    sub: string
+    email?: string
+    name?: string
+    given_name?: string
+    family_name?: string
+    nickname?: string
+    picture?: string
+    // Auth0 custom claims for roles/permissions (namespace varies)
+    [key: string]: unknown
+  }
+
+  // Extract roles from Auth0 custom claims (common patterns)
+  const roles: string[] = []
+  const permissions: string[] = []
+  for (const [key, value] of Object.entries(userInfo)) {
+    if (key.endsWith('/roles') && Array.isArray(value)) {
+      roles.push(...(value as string[]))
+    }
+    if (key.endsWith('/permissions') && Array.isArray(value)) {
+      permissions.push(...(value as string[]))
+    }
+  }
+
+  return {
+    id: userInfo.sub,
+    email: userInfo.email || '',
+    first_name: userInfo.given_name,
+    last_name: userInfo.family_name,
+    ...(roles.length > 0 && { roles }),
+    ...(permissions.length > 0 && { permissions }),
+  }
+}
+
+/**
+ * Fetch user info from Okta userinfo endpoint
+ */
+async function fetchOktaUserInfo(
+  accessToken: string,
+  authorizationEndpoint: string
+): Promise<UpstreamUser> {
+  // Derive userinfo endpoint from authorization endpoint
+  // e.g., https://dev-123456.okta.com/oauth2/v1/authorize -> https://dev-123456.okta.com/oauth2/v1/userinfo
+  const userinfoUrl = authorizationEndpoint.replace('/authorize', '/userinfo')
+
+  const response = await fetch(userinfoUrl, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`Okta userinfo failed: ${response.status} - ${error}`)
+  }
+
+  const userInfo = await response.json() as {
+    sub: string
+    email?: string
+    name?: string
+    given_name?: string
+    family_name?: string
+    preferred_username?: string
+    groups?: string[]
+    [key: string]: unknown
+  }
+
+  // Okta often uses groups claim for roles
+  const roles = userInfo.groups || []
+
+  return {
+    id: userInfo.sub,
+    email: userInfo.email || '',
+    first_name: userInfo.given_name,
+    last_name: userInfo.family_name,
+    ...(roles.length > 0 && { roles }),
+  }
 }
 
 async function exchangeUpstreamCode(
@@ -1656,6 +1786,94 @@ async function exchangeUpstreamCode(
     return data
   }
 
+  if (upstream.provider === 'auth0') {
+    // Auth0 token exchange
+    if (!upstream.tokenEndpoint) {
+      throw new Error('tokenEndpoint is required for Auth0 (e.g., https://mytenant.auth0.com/oauth/token)')
+    }
+
+    const response = await fetch(upstream.tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: upstream.clientId,
+        client_secret: upstream.apiKey,
+        code,
+        redirect_uri: redirectUri,
+      }).toString(),
+    })
+
+    if (!response.ok) {
+      const error = await response.text()
+      throw new Error(`Auth0 token exchange failed: ${response.status} - ${error}`)
+    }
+
+    const tokenData = await response.json() as {
+      access_token: string
+      refresh_token?: string
+      expires_in?: number
+      id_token?: string
+      token_type: string
+    }
+
+    // Fetch user info from Auth0 userinfo endpoint
+    const user = await fetchAuth0UserInfo(tokenData.access_token, upstream.authorizationEndpoint!)
+
+    return {
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      expires_in: tokenData.expires_in,
+      user,
+    }
+  }
+
+  if (upstream.provider === 'okta') {
+    // Okta token exchange
+    if (!upstream.tokenEndpoint) {
+      throw new Error('tokenEndpoint is required for Okta (e.g., https://dev-123456.okta.com/oauth2/v1/token)')
+    }
+
+    const response = await fetch(upstream.tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: upstream.clientId,
+        client_secret: upstream.apiKey,
+        code,
+        redirect_uri: redirectUri,
+      }).toString(),
+    })
+
+    if (!response.ok) {
+      const error = await response.text()
+      throw new Error(`Okta token exchange failed: ${response.status} - ${error}`)
+    }
+
+    const tokenData = await response.json() as {
+      access_token: string
+      refresh_token?: string
+      expires_in?: number
+      id_token?: string
+      token_type: string
+    }
+
+    // Fetch user info from Okta userinfo endpoint
+    const user = await fetchOktaUserInfo(tokenData.access_token, upstream.authorizationEndpoint!)
+
+    return {
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      expires_in: tokenData.expires_in,
+      user,
+    }
+  }
+
   // Custom provider
   if (!upstream.tokenEndpoint) {
     throw new Error('tokenEndpoint is required for custom providers')
@@ -1682,7 +1900,6 @@ async function exchangeUpstreamCode(
 
   return response.json()
 }
-
 async function getOrCreateUser(
   storage: OAuthStorage,
   upstreamUser: UpstreamUser,

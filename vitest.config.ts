@@ -7,6 +7,14 @@ export default defineConfig({
 		environment: 'jsdom',
 		include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'core/src/**/*.test.ts', 'workers/**/*.test.ts'],
 		setupFiles: [resolve(__dirname, 'tests/setup.ts')],
+		pool: 'forks',
+		poolOptions: {
+			forks: {
+				singleFork: true,
+			},
+		},
+		maxConcurrency: 1,
+		fileParallelism: false,
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'json', 'html'],

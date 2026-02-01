@@ -13,6 +13,7 @@ import type {
   OAuthAccessToken,
   OAuthRefreshToken,
   OAuthGrant,
+  OAuthDeviceCode,
 } from './types.js'
 
 /**
@@ -213,6 +214,35 @@ export interface OAuthStorage {
    * List grants for a user
    */
   listUserGrants(userId: string): Promise<OAuthGrant[]>
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Device Code Operations (RFC 8628)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Save a device code
+   */
+  saveDeviceCode(deviceCode: OAuthDeviceCode): Promise<void>
+
+  /**
+   * Get a device code by device code (long code used for polling)
+   */
+  getDeviceCode(deviceCode: string): Promise<OAuthDeviceCode | null>
+
+  /**
+   * Get a device code by user code (short code entered by user)
+   */
+  getDeviceCodeByUserCode(userCode: string): Promise<OAuthDeviceCode | null>
+
+  /**
+   * Update a device code (e.g., when user authorizes)
+   */
+  updateDeviceCode(deviceCode: OAuthDeviceCode): Promise<void>
+
+  /**
+   * Delete a device code (after successful token exchange or expiration)
+   */
+  deleteDeviceCode(deviceCode: string): Promise<void>
 }
 
 /**
@@ -242,6 +272,8 @@ export class MemoryOAuthStorage implements OAuthStorage {
   private accessTokens = new Map<string, OAuthAccessToken>()
   private refreshTokens = new Map<string, OAuthRefreshToken>()
   private grants = new Map<string, OAuthGrant>()
+  private deviceCodes = new Map<string, OAuthDeviceCode>()
+  private deviceCodesByUserCode = new Map<string, string>()
 
   // User operations
   async getUser(id: string): Promise<OAuthUser | null> {
@@ -453,6 +485,33 @@ export class MemoryOAuthStorage implements OAuthStorage {
     return Array.from(this.grants.values()).filter((g) => g.userId === userId && !g.revoked)
   }
 
+  // Device code operations (RFC 8628)
+  async saveDeviceCode(deviceCode: OAuthDeviceCode): Promise<void> {
+    this.deviceCodes.set(deviceCode.deviceCode, deviceCode)
+    this.deviceCodesByUserCode.set(deviceCode.userCode.toUpperCase(), deviceCode.deviceCode)
+  }
+
+  async getDeviceCode(deviceCode: string): Promise<OAuthDeviceCode | null> {
+    return this.deviceCodes.get(deviceCode) ?? null
+  }
+
+  async getDeviceCodeByUserCode(userCode: string): Promise<OAuthDeviceCode | null> {
+    const deviceCode = this.deviceCodesByUserCode.get(userCode.toUpperCase())
+    return deviceCode ? this.deviceCodes.get(deviceCode) ?? null : null
+  }
+
+  async updateDeviceCode(deviceCode: OAuthDeviceCode): Promise<void> {
+    this.deviceCodes.set(deviceCode.deviceCode, deviceCode)
+  }
+
+  async deleteDeviceCode(deviceCode: string): Promise<void> {
+    const dc = this.deviceCodes.get(deviceCode)
+    if (dc) {
+      this.deviceCodesByUserCode.delete(dc.userCode.toUpperCase())
+    }
+    this.deviceCodes.delete(deviceCode)
+  }
+
   /**
    * Clear all data (for testing)
    */
@@ -466,5 +525,7 @@ export class MemoryOAuthStorage implements OAuthStorage {
     this.accessTokens.clear()
     this.refreshTokens.clear()
     this.grants.clear()
+    this.deviceCodes.clear()
+    this.deviceCodesByUserCode.clear()
   }
 }
