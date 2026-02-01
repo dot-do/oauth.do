@@ -40,6 +40,9 @@ interface Env {
   // Branding for @mdxui/auth app
   APP_NAME?: string
   APP_TAGLINE?: string
+  // Rate limiting
+  RATE_LIMITER: RateLimiter
+  RATE_LIMITER_STRICT: RateLimiter
 }
 
 /**
@@ -76,6 +79,23 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
   app.use('*', async (c, next) => {
     const origins = c.env.ALLOWED_ORIGINS?.split(',') || ['*']
     return cors({ origin: origins })(c, next)
+  })
+
+  // Rate limiting - strict for sensitive endpoints
+  const strictPaths = new Set(['/token', '/register', '/exchange', '/login', '/validate-api-key'])
+  app.use('*', async (c, next) => {
+    const path = new URL(c.req.url).pathname
+    // Skip rate limiting for static assets and well-known endpoints
+    if (path.startsWith('/.well-known') || path === '/health') {
+      return next()
+    }
+    const ip = c.req.header('cf-connecting-ip') || 'unknown'
+    const limiter = strictPaths.has(path) ? c.env.RATE_LIMITER_STRICT : c.env.RATE_LIMITER
+    const { success } = await limiter.limit({ key: `${ip}:${path}` })
+    if (!success) {
+      return c.json({ error: 'rate_limit_exceeded', error_description: 'Too many requests' }, 429)
+    }
+    return next()
   })
 
   // Health check
