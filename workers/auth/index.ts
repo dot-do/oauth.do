@@ -50,7 +50,8 @@ interface VerifyResult {
 // Constants
 // ═══════════════════════════════════════════════════════════════════════════
 
-const TOKEN_CACHE_TTL = 5 * 60 // 5 minutes
+const TOKEN_CACHE_TTL = 5 * 60 // 5 minutes for valid tokens
+const NEGATIVE_CACHE_TTL = 60 // 60 seconds for invalid tokens
 const CACHE_URL_PREFIX = 'https://auth.oauth.do/_cache/'
 
 // JWKS cache (module-level)
@@ -106,9 +107,11 @@ async function cacheResult(token: string, result: VerifyResult): Promise<void> {
     const cache = caches.default
     const hash = await hashToken(token)
     const cacheKey = new Request(`${CACHE_URL_PREFIX}${hash}`)
-    const data = { result, expiresAt: Date.now() + TOKEN_CACHE_TTL * 1000 }
+    // Use shorter TTL for invalid tokens to allow retry sooner
+    const ttl = result.valid ? TOKEN_CACHE_TTL : NEGATIVE_CACHE_TTL
+    const data = { result, expiresAt: Date.now() + ttl * 1000 }
     const response = new Response(JSON.stringify(data), {
-      headers: { 'Cache-Control': `max-age=${TOKEN_CACHE_TTL}` },
+      headers: { 'Cache-Control': `max-age=${ttl}` },
     })
     await cache.put(cacheKey, response)
   } catch {
@@ -294,10 +297,9 @@ async function verifyToken(token: string, env: Env): Promise<VerifyResult> {
     result = await verifyJWT(token, env)
   }
 
-  // Cache successful results
-  if (result.valid) {
-    await cacheResult(token, result)
-  }
+
+  // Cache results (valid tokens: 5 min, invalid tokens: 60 sec)
+  await cacheResult(token, result)
 
   return result
 }

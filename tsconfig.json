@@ -1,35 +1,17 @@
 {
+	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
-		"target": "ES2022",
-		"module": "ESNext",
 		"lib": [
 			"ES2022",
 			"DOM"
 		],
-		"moduleResolution": "bundler",
-		"strict": true,
-		"esModuleInterop": true,
-		"skipLibCheck": true,
-		"forceConsistentCasingInFileNames": true,
-		"declaration": true,
-		"declarationMap": true,
-		"sourceMap": true,
 		"outDir": "./dist",
 		"rootDir": "./src",
 		"jsx": "react",
 		"typeRoots": [
 			"./types",
 			"./node_modules/@types"
-		],
-		"noUnusedLocals": true,
-		"noUnusedParameters": true,
-		"noFallthroughCasesInSwitch": true,
-		"exactOptionalPropertyTypes": true,
-		"noPropertyAccessFromIndexSignature": true,
-		"noUncheckedIndexedAccess": true,
-		"useUnknownInCatchVariables": true,
-		"resolveJsonModule": true,
-		"isolatedModules": true
+		]
 	},
 	"include": [
 		"src/**/*",

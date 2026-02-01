@@ -74,6 +74,12 @@ export interface OAuth21ServerConfig {
   enableDynamicRegistration?: boolean
   /** Callback after successful user authentication */
   onUserAuthenticated?: (user: OAuthUser) => void | Promise<void>
+  /**
+   * Callback after token revocation (RFC 7009)
+   * Use this to invalidate caches (e.g., auth worker cache) when tokens are revoked.
+   * The callback receives the revoked token value.
+   */
+  onTokenRevoked?: (token: string, tokenTypeHint?: string) => void | Promise<void>
   /** Enable debug logging */
   debug?: boolean
   /** Allowed CORS origins (default: issuer origin only in production, '*' in dev mode) */
@@ -168,6 +174,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     authCodeTtl = 600,
     enableDynamicRegistration = true,
     onUserAuthenticated,
+    onTokenRevoked,
     debug = false,
     allowedOrigins,
     signingKeyManager: providedSigningKeyManager,
@@ -1371,6 +1378,11 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       await storage.revokeRefreshToken(token)
     }
 
+    // Call revocation callback if configured (for cache invalidation, etc.)
+    if (onTokenRevoked) {
+      await onTokenRevoked(token, tokenTypeHint || undefined)
+    }
+
     // RFC 7009 says to return 200 OK even if token was invalid
     return c.json({ success: true })
   })
@@ -1385,13 +1397,9 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
 /**
  * Result of client authentication
  */
-interface ClientAuthResult {
-  success: boolean
-  client?: OAuthClient
-  error?: string
-  errorDescription?: string
-  statusCode?: number
-}
+type ClientAuthResult =
+  | { authenticated: true; client: OAuthClient }
+  | { authenticated: false; error: string; errorDescription?: string; statusCode?: number }
 
 /**
  * Authenticate a client at the token endpoint
@@ -1423,7 +1431,7 @@ async function authenticateClient(
       }
     } catch {
       return {
-        success: false,
+        authenticated: false,
         error: 'invalid_client',
         errorDescription: 'Invalid Authorization header',
         statusCode: 401,
@@ -1439,7 +1447,7 @@ async function authenticateClient(
 
   if (!clientId) {
     return {
-      success: false,
+      authenticated: false,
       error: 'invalid_request',
       errorDescription: 'client_id is required',
       statusCode: 400,
@@ -1450,7 +1458,7 @@ async function authenticateClient(
   const client = await storage.getClient(clientId)
   if (!client) {
     return {
-      success: false,
+      authenticated: false,
       error: 'invalid_client',
       errorDescription: 'Client not found',
       statusCode: 401,
@@ -1463,7 +1471,7 @@ async function authenticateClient(
     if (!client.clientSecretHash) {
       // Client is configured to require auth but has no secret stored
       return {
-        success: false,
+        authenticated: false,
         error: 'invalid_client',
         errorDescription: 'Client authentication failed',
         statusCode: 401,
@@ -1472,7 +1480,7 @@ async function authenticateClient(
 
     if (!clientSecret) {
       return {
-        success: false,
+        authenticated: false,
         error: 'invalid_client',
         errorDescription: 'Client secret is required',
         statusCode: 401,
@@ -1486,7 +1494,7 @@ async function authenticateClient(
         console.log('[OAuth] Client authentication failed for:', clientId)
       }
       return {
-        success: false,
+        authenticated: false,
         error: 'invalid_client',
         errorDescription: 'Client authentication failed',
         statusCode: 401,
@@ -1499,7 +1507,7 @@ async function authenticateClient(
   }
 
   return {
-    success: true,
+    authenticated: true,
     client,
   }
 }
@@ -1762,14 +1770,14 @@ async function handleAuthorizationCodeGrant(
 
   // Authenticate client (supports client_secret_basic and client_secret_post)
   const authResult = await authenticateClient(c, params, storage, debug)
-  if (!authResult.success) {
+  if (!authResult.authenticated) {
     const statusCode = (authResult.statusCode || 401) as 400 | 401
     return c.json(
       { error: authResult.error, error_description: authResult.errorDescription } as OAuthError,
       statusCode
     )
   }
-  const client = authResult.client!
+  const client = authResult.client
 
   // Consume authorization code (one-time use)
   const authCode = await storage.consumeAuthorizationCode(code)
@@ -1894,14 +1902,14 @@ async function handleRefreshTokenGrant(
 
   // Authenticate client (supports client_secret_basic and client_secret_post)
   const authResult = await authenticateClient(c, params, storage, debug)
-  if (!authResult.success) {
+  if (!authResult.authenticated) {
     const statusCode = (authResult.statusCode || 401) as 400 | 401
     return c.json(
       { error: authResult.error, error_description: authResult.errorDescription } as OAuthError,
       statusCode
     )
   }
-  const client = authResult.client!
+  const client = authResult.client
 
   const storedRefresh = await storage.getRefreshToken(refresh_token)
   if (!storedRefresh) {
