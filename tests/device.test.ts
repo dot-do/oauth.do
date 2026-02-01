@@ -349,5 +349,63 @@ describe('WorkOS Device Authorization Flow', () => {
 				pollForTokens(mockDeviceCode, 0.05, 10)
 			).rejects.toThrow('Token polling failed: server_error')
 		})
+
+		it('should handle network errors during polling and continue', async () => {
+			let callCount = 0
+
+			const mockFetch = vi.fn().mockImplementation(async () => {
+				callCount++
+				if (callCount === 1) {
+					// First call throws a network error (non-Error object)
+					throw 'Network failure'
+				}
+				return {
+					ok: true,
+					json: async () => ({
+						access_token: mockAccessToken,
+						token_type: 'Bearer',
+						expires_in: 3600,
+					}),
+				}
+			})
+
+			configure({ clientId: mockClientId, fetch: mockFetch as any })
+
+			const result = await pollForTokens(mockDeviceCode, 0.05, 10)
+
+			expect(mockFetch).toHaveBeenCalledTimes(2)
+			expect(result.access_token).toBe(mockAccessToken)
+		})
+
+		it('should handle malformed JSON in error response', async () => {
+			let callCount = 0
+
+			const mockFetch = vi.fn().mockImplementation(async () => {
+				callCount++
+				if (callCount === 1) {
+					return {
+						ok: false,
+						json: async () => {
+							throw new Error('Invalid JSON')
+						},
+					}
+				}
+				return {
+					ok: true,
+					json: async () => ({
+						access_token: mockAccessToken,
+						token_type: 'Bearer',
+						expires_in: 3600,
+					}),
+				}
+			})
+
+			configure({ clientId: mockClientId, fetch: mockFetch as any })
+
+			// Should fail with 'unknown' error since JSON parse fails
+			await expect(
+				pollForTokens(mockDeviceCode, 0.05, 10)
+			).rejects.toThrow('Token polling failed: unknown')
+		})
 	})
 })

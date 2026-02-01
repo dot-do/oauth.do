@@ -21,6 +21,9 @@ export interface OAuthDOEnv {
   ALLOWED_ORIGINS?: string
 }
 
+/** Interval for cleanup alarms (1 hour in milliseconds) */
+const CLEANUP_ALARM_INTERVAL_MS = 60 * 60 * 1000
+
 /**
  * OAuth Durable Object
  *
@@ -29,6 +32,7 @@ export interface OAuthDOEnv {
  * - JWT signing with key rotation support
  * - WorkOS upstream authentication
  * - Optional Stripe integration
+ * - Automatic cleanup of expired tokens via Durable Object alarms
  */
 export class OAuthDO extends DurableObject<OAuthDOEnv> {
   private app: Hono | null = null
@@ -104,7 +108,21 @@ export class OAuthDO extends DurableObject<OAuthDOEnv> {
       debug: false,
     })
 
+    // Schedule initial cleanup alarm if not already set
+    await this.ensureAlarmScheduled()
+
     this.initialized = true
+  }
+
+  /**
+   * Ensure a cleanup alarm is scheduled
+   */
+  private async ensureAlarmScheduled(): Promise<void> {
+    const currentAlarm = await this.ctx.storage.getAlarm()
+    if (currentAlarm === null) {
+      // Schedule first alarm
+      await this.ctx.storage.setAlarm(Date.now() + CLEANUP_ALARM_INTERVAL_MS)
+    }
   }
 
   /**
@@ -118,6 +136,31 @@ export class OAuthDO extends DurableObject<OAuthDOEnv> {
     }
 
     return this.app.fetch(request)
+  }
+
+  /**
+   * Handle Durable Object alarm for periodic cleanup
+   *
+   * This runs every hour to:
+   * - Delete expired authorization codes (typically expire in 10 minutes)
+   * - Delete expired access tokens
+   */
+  async alarm(): Promise<void> {
+    // Ensure storage is initialized
+    if (!this.storage) {
+      this.storage = new CollectionsOAuthStorage(this.ctx.storage.sql)
+    }
+
+    try {
+      // Run cleanup of expired tokens and codes
+      const result = await this.storage.cleanup()
+      console.log(`Cleanup completed: removed ${result.authCodes} expired auth codes, ${result.accessTokens} expired access tokens`)
+    } catch (error) {
+      console.error('Cleanup alarm failed:', error)
+    }
+
+    // Schedule the next alarm
+    await this.ctx.storage.setAlarm(Date.now() + CLEANUP_ALARM_INTERVAL_MS)
   }
 
   /**

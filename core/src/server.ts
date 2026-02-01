@@ -371,7 +371,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       userinfo_endpoint: `${issuer}/userinfo`,
       scopes_supported: scopes,
       response_types_supported: ['code'],
-      grant_types_supported: ['authorization_code', 'refresh_token'],
+      grant_types_supported: ['authorization_code', 'refresh_token', 'client_credentials'],
       token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
       code_challenge_methods_supported: ['S256'],
     }
@@ -1089,10 +1089,13 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       return handleAuthorizationCodeGrant(c, params, storage, accessTokenTtl, refreshTokenTtl, debug, jwtSigningOptions)
     } else if (grantType === 'refresh_token') {
       return handleRefreshTokenGrant(c, params, storage, accessTokenTtl, refreshTokenTtl, debug, jwtSigningOptions)
+    } else if (grantType === 'client_credentials') {
+      return handleClientCredentialsGrant(c, params, storage, accessTokenTtl, debug, jwtSigningOptions)
     } else {
-      return c.json({ error: 'unsupported_grant_type', error_description: 'Only authorization_code and refresh_token grants are supported' } as OAuthError, 400)
+      return c.json({ error: 'unsupported_grant_type', error_description: 'grant_type not supported' } as OAuthError, 400)
     }
   })
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Platform Token Exchange (for first-party domains)
@@ -1880,6 +1883,82 @@ async function handleAuthorizationCodeGrant(
     expires_in: accessTokenTtl,
     refresh_token: refreshToken,
     ...(authCode.scope !== undefined && { scope: authCode.scope }),
+  }
+
+  return c.json(response)
+}
+
+
+/**
+ * Handle client_credentials grant type (OAuth 2.1 machine-to-machine)
+ */
+async function handleClientCredentialsGrant(
+  c: Context,
+  params: Record<string, string>,
+  storage: OAuthStorage,
+  accessTokenTtl: number,
+  debug: boolean,
+  jwtOptions?: JWTSigningOptions
+): Promise<Response> {
+  // Authenticate client (supports client_secret_basic and client_secret_post)
+  const authResult = await authenticateClient(c, params, storage, debug)
+  if (!authResult.authenticated) {
+    const statusCode = (authResult.statusCode || 401) as 400 | 401
+    return c.json(
+      { error: authResult.error, error_description: authResult.errorDescription } as OAuthError,
+      statusCode
+    )
+  }
+  const client = authResult.client
+
+  // Verify client is authorized for client_credentials grant
+  if (!client.grantTypes.includes('client_credentials')) {
+    return c.json(
+      { error: 'unauthorized_client', error_description: 'Client is not authorized for client_credentials grant' } as OAuthError,
+      400
+    )
+  }
+
+  // Get requested scope (optional)
+  const requestedScope = params['scope']
+
+  const now = Date.now()
+
+  // Generate access token (JWT if configured, otherwise opaque)
+  // Note: client_credentials does not have a userId (machine-to-machine)
+  let accessToken: string
+  if (jwtOptions) {
+    accessToken = await signJWTAccessToken(
+      {
+        sub: client.clientId, // Use client_id as subject for M2M
+        client_id: client.clientId,
+        ...(requestedScope && { scope: requestedScope }),
+      },
+      jwtOptions,
+      accessTokenTtl
+    )
+  } else {
+    accessToken = generateToken(48)
+    await storage.saveAccessToken({
+      token: accessToken,
+      tokenType: 'Bearer',
+      clientId: client.clientId,
+      // No userId for client_credentials (machine-to-machine)
+      ...(requestedScope && { scope: requestedScope }),
+      issuedAt: now,
+      expiresAt: now + accessTokenTtl * 1000,
+    })
+  }
+
+  if (debug) {
+    console.log('[OAuth] Client credentials token issued for client:', client.clientId, jwtOptions ? '(JWT)' : '(opaque)')
+  }
+
+  const response: TokenResponse = {
+    access_token: accessToken,
+    token_type: 'Bearer',
+    expires_in: accessTokenTtl,
+    ...(requestedScope && { scope: requestedScope }),
   }
 
   return c.json(response)

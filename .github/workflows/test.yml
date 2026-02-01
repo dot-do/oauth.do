@@ -23,4 +23,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install
       - run: pnpm build
-      - run: pnpm test
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Run tests with coverage
+        run: npx vitest run --coverage
