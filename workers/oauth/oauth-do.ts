@@ -48,16 +48,39 @@ export class OAuthDO extends DurableObject<OAuthDOEnv> {
     // Create signing key manager
     this.keyManager = new SigningKeyManager({ maxKeys: 2 })
 
-    // Load signing key from environment secret (preferred) or generate ephemeral
+    // Ensure signing keys table exists
+    this.ctx.storage.sql.exec(
+      'CREATE TABLE IF NOT EXISTS _signing_keys (kid TEXT PRIMARY KEY, key_data TEXT NOT NULL, created_at INTEGER NOT NULL)'
+    )
+
+    // Load signing key with priority: env secret > DO storage > generate + persist
     if (this.env.SIGNING_KEY_JWK) {
-      // Load from env secret - the secure way
+      // Load from env secret - the most secure option
       const keyData = JSON.parse(this.env.SIGNING_KEY_JWK) as SerializedSigningKey
       await this.keyManager.loadKeys([keyData])
     } else {
-      // No env secret - generate ephemeral key (will change on DO restart)
-      // This is fine for dev but not production
-      console.warn('No SIGNING_KEY_JWK secret configured - using ephemeral key')
-      await this.keyManager.getCurrentKey()
+      // Try to load from DO SQLite storage (survives restarts)
+      const storedKeys = this.ctx.storage.sql
+        .exec('SELECT key_data FROM _signing_keys ORDER BY created_at DESC LIMIT 2')
+        .toArray() as { key_data: string }[]
+
+      if (storedKeys.length > 0) {
+        const serializedKeys = storedKeys.map(row => JSON.parse(row.key_data) as SerializedSigningKey)
+        await this.keyManager.loadKeys(serializedKeys)
+      } else {
+        // Generate a new key and persist it in DO storage
+        console.warn('No SIGNING_KEY_JWK secret configured - generating and persisting key in DO storage')
+        await this.keyManager.getCurrentKey()
+        const exported = await this.keyManager.exportKeys()
+        for (const serializedKey of exported) {
+          this.ctx.storage.sql.exec(
+            'INSERT OR REPLACE INTO _signing_keys (kid, key_data, created_at) VALUES (?, ?, ?)',
+            serializedKey.kid,
+            JSON.stringify(serializedKey),
+            serializedKey.createdAt
+          )
+        }
+      }
     }
 
     // Determine issuer from environment or default
