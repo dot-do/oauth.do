@@ -23,7 +23,7 @@ vi.mock('open', () => ({
 }))
 
 // Now import the module under test and mocked modules
-import { ensureLoggedIn, forceLogin, ensureLoggedOut, type LoginOptions } from '../src/login.js'
+import { ensureLoggedIn, forceLogin, ensureLoggedOut, _resetLoginState, type LoginOptions } from '../src/login.js'
 import { authorizeDevice, pollForTokens } from '../src/device.js'
 import { refreshAccessToken, getUser } from '../src/auth.js'
 import { createSecureStorage } from '../src/storage.js'
@@ -53,6 +53,7 @@ describe('Login Module', () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		vi.useFakeTimers({ shouldAdvanceTime: true })
+		_resetLoginState()
 		originalConfig = { ...getConfig() }
 
 		// Create fresh mock storage for each test

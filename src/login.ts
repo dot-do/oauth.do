@@ -42,6 +42,19 @@ const REFRESH_BUFFER_MS = 5 * 60 * 1000
 let loginInProgress: Promise<LoginResult> | null = null
 let refreshInProgress: Promise<LoginResult> | null = null
 
+// Cache of the last successful token result to avoid re-reading storage
+// and to serve parallel callers without triggering multiple refreshes
+let cachedResult: { token: string; expiresAt?: number } | null = null
+
+/**
+ * Reset internal state (for testing only)
+ */
+export function _resetLoginState(): void {
+	loginInProgress = null
+	refreshInProgress = null
+	cachedResult = null
+}
+
 /**
  * Check if token is expired or about to expire
  */
@@ -81,6 +94,9 @@ async function doRefresh(
 			} else if (storage?.setToken) {
 				await storage.setToken(newTokens.access_token)
 			}
+
+			// Update in-memory cache so parallel callers get the new token
+			cachedResult = { token: newTokens.access_token, expiresAt }
 
 			return { token: newTokens.access_token, isNewLogin: false }
 		} finally {
@@ -173,6 +189,15 @@ async function doDeviceLogin(options: LoginOptions): Promise<LoginResult> {
  * Uses singleton pattern to prevent multiple concurrent login/refresh attempts
  */
 export async function ensureLoggedIn(options: LoginOptions = {}): Promise<LoginResult> {
+	// Fast path: return cached token if still valid (no disk I/O, no race)
+	if (cachedResult && cachedResult.expiresAt && !isTokenExpired(cachedResult.expiresAt)) {
+		return { token: cachedResult.token, isNewLogin: false }
+	}
+
+	// If a refresh or login is already in flight, wait for it
+	if (refreshInProgress) return refreshInProgress
+	if (loginInProgress) return loginInProgress
+
 	const config = getConfig()
 	const { storage = createSecureStorage(config.storagePath) } = options
 
@@ -181,16 +206,17 @@ export async function ensureLoggedIn(options: LoginOptions = {}): Promise<LoginR
 	const existingToken = tokenData?.accessToken || (await storage.getToken())
 
 	if (existingToken) {
-		// If we have expiration info and token is not expired, just return it
-		// No need for network validation - this function just provides tokens
+		// If we have expiration info and token is not expired, cache and return
 		if (tokenData?.expiresAt && !isTokenExpired(tokenData.expiresAt)) {
+			cachedResult = { token: existingToken, expiresAt: tokenData.expiresAt }
 			return { token: existingToken, isNewLogin: false }
 		}
 
 		// Token is expired or no expiration info - try to refresh
 		if (tokenData?.refreshToken) {
 			try {
-				return await doRefresh(tokenData, storage)
+				const result = await doRefresh(tokenData, storage)
+				return result
 			} catch (error) {
 				// Refresh failed - might need to re-login
 				console.warn('Token refresh failed:', error)
@@ -202,6 +228,7 @@ export async function ensureLoggedIn(options: LoginOptions = {}): Promise<LoginR
 		if (!tokenData?.expiresAt && !tokenData?.refreshToken) {
 			const { user } = await getUser(existingToken)
 			if (user) {
+				cachedResult = { token: existingToken }
 				return { token: existingToken, isNewLogin: false }
 			}
 		}
