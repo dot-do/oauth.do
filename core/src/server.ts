@@ -47,6 +47,7 @@ import {
   generateLoginFormHtml,
 } from './dev.js'
 import type { SigningKeyManager, AccessTokenClaims } from './jwt-signing.js'
+import { verifyJWTWithKeyManager } from './jwt-signing.js'
 import { decodeJWT, verifyJWT } from './jwt.js'
 
 /**
@@ -381,19 +382,11 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
         return c.json({ keys: [] })
       }
 
-      const key = await ensureSigningKey()
-      const jwk = await crypto.subtle.exportKey('jwk', key.publicKey) as JsonWebKey
-
-      return c.json({
-        keys: [{
-          kty: 'RSA',
-          kid: key.kid,
-          use: 'sig',
-          alg: 'RS256',
-          n: jwk.n,
-          e: jwk.e,
-        }]
-      })
+      // Ensure signing key manager is initialized
+      await ensureSigningKey()
+      // Export ALL keys (current + rotated) so tokens signed with older keys can still be verified
+      const jwks = await signingKeyManager!.toJWKS()
+      return c.json(jwks)
     } catch (err) {
       if (debug) {
         console.error('[OAuth] JWKS error:', err)
@@ -425,52 +418,35 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     // Try to decode as JWT first
     const decoded = decodeJWT(token)
     if (decoded) {
-      // It's a JWT - verify signature and claims
+      // It's a JWT - verify signature and claims using verifyJWTWithKeyManager
       const effectiveIssuer = getEffectiveIssuer(c)
 
-      // Verify JWT signature using the signing key manager's public key
-      let signatureValid = false
-      if (signingKeyManager || useJwtAccessTokens) {
-        try {
-          const key = await ensureSigningKey()
-          const result = await verifyJWT(token, {
-            publicKey: key.publicKey,
-            issuer: decoded.payload.iss === effectiveIssuer ? effectiveIssuer : defaultIssuer,
-          })
-          signatureValid = result.valid
-        } catch {
-          // Signature verification failed
-          signatureValid = false
-        }
-      } else {
-        // No signing key manager available - cannot verify signature
+      if (!signingKeyManager && !useJwtAccessTokens) {
         return c.json({ active: false })
       }
 
-      if (!signatureValid) {
-        return c.json({ active: false })
-      }
+      // Ensure signing key manager is initialized
+      await ensureSigningKey()
 
-      const now = Math.floor(Date.now() / 1000)
-
-      // Check expiration
-      if (decoded.payload.exp && decoded.payload.exp < now) {
+      // Verify signature and exp using the key manager (no issuer - we check manually for multi-issuer support)
+      const payload = await verifyJWTWithKeyManager(token, signingKeyManager!)
+      if (!payload) {
         return c.json({ active: false })
       }
 
       // Check issuer - accept tokens from any issuer we could have issued
-      if (decoded.payload.iss && decoded.payload.iss !== effectiveIssuer && decoded.payload.iss !== defaultIssuer) {
+      if (payload.iss && payload.iss !== effectiveIssuer && payload.iss !== defaultIssuer) {
         return c.json({ active: false })
       }
 
       return c.json({
         active: true,
-        sub: decoded.payload.sub,
-        client_id: decoded.payload['client_id'],
-        scope: decoded.payload['scope'],
-        exp: decoded.payload.exp,
-        iat: decoded.payload.iat,
-        iss: decoded.payload.iss,
+        sub: payload.sub,
+        client_id: payload.client_id,
+        scope: payload.scope,
+        exp: payload.exp,
+        iat: payload.iat,
+        iss: payload.iss,
         token_type: 'Bearer',
       })
     }
@@ -733,8 +709,6 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       clientId: 'first-party',
       userId: '',
       redirectUri: returnTo,
-      codeChallenge: 'none', // Not used for simple login
-      codeChallengeMethod: 'S256',
       effectiveIssuer, // Store for use in callback
       issuedAt: Date.now(),
       expiresAt: Date.now() + authCodeTtl * 1000,
@@ -937,9 +911,8 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
           clientId: 'first-party',
           userId: user.id,
           redirectUri: loginAuth.redirectUri,
-          codeChallenge: accessToken, // Store the JWT in codeChallenge field
-          state: refreshToken, // Store refresh token in state field
-          codeChallengeMethod: 'S256',
+          exchangeAccessToken: accessToken,
+          exchangeRefreshToken: refreshToken,
           issuedAt: Date.now(),
           expiresAt: Date.now() + 60 * 1000, // 60 second TTL
         })
@@ -1141,9 +1114,8 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       return c.json({ error: 'invalid_grant', error_description: 'Invalid or expired code' } as OAuthError, 400)
     }
 
-    // The JWT was stored in codeChallenge field, refresh token in state
-    const accessToken = exchangeData.codeChallenge
-    const refreshToken = exchangeData.state
+    const accessToken = exchangeData.exchangeAccessToken
+    const refreshToken = exchangeData.exchangeRefreshToken
 
     if (debug) {
       console.log('[OAuth] Platform exchange successful for user:', exchangeData.userId)
@@ -1989,3 +1961,4 @@ async function handleRefreshTokenGrant(
 // Re-export JWT verification utilities for downstream consumers
 export { verifyJWT, decodeJWT, isJWTExpired, clearJWKSCache } from './jwt.js'
 export type { JWTVerifyResult, JWTVerifyOptions, JWTPayload, JWTHeader } from './jwt.js'
+export { verifyJWTWithKeyManager } from './jwt-signing.js'

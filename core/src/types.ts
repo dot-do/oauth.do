@@ -111,6 +111,10 @@ export interface OAuthAuthorizationCode {
   upstreamState?: string
   /** Effective issuer for multi-tenant scenarios (stored from X-Issuer header) */
   effectiveIssuer?: string
+  /** Temporary storage for access token JWT during platform exchange flow */
+  exchangeAccessToken?: string
+  /** Temporary storage for refresh token during platform exchange flow */
+  exchangeRefreshToken?: string
 }
 
 /**

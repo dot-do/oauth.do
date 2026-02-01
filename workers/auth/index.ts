@@ -379,6 +379,19 @@ app.get('/me', async (c) => {
 
 // Invalidate cache for a token
 app.post('/invalidate', async (c) => {
+  // Require authentication (Bearer token, API key, or admin token)
+  const auth = c.req.header('Authorization')
+  const callerToken = auth?.startsWith('Bearer ') ? auth.slice(7) : undefined
+
+  if (!callerToken) {
+    return c.json({ error: 'Authentication required' }, 401)
+  }
+
+  const authResult = await verifyToken(callerToken, c.env)
+  if (!authResult.valid) {
+    return c.json({ error: authResult.error || 'Invalid credentials' }, 401)
+  }
+
   const body = await c.req.json().catch(() => ({})) as { token?: string }
   const token = body.token
 

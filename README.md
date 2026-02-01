@@ -277,7 +277,7 @@ import { auth, requireAuth, apiKey } from 'oauth.do/hono'
 const app = new Hono()
 
 // Add auth to all routes (populates c.var.user if authenticated)
-app.use('*', auth())
+app.use('*', auth({ jwksUri: 'https://api.workos.com/sso/jwks/client_xxx' }))
 
 // Public route - auth is optional
 app.get('/api/public', (c) => {
@@ -286,17 +286,17 @@ app.get('/api/public', (c) => {
 })
 
 // Protected route - requires authentication
-app.use('/api/protected/*', requireAuth())
+app.use('/api/protected/*', requireAuth({ jwksUri: 'https://api.workos.com/sso/jwks/client_xxx' }))
 
 app.get('/api/protected/data', (c) => {
   return c.json({ secret: 'data', user: c.var.user })
 })
 
 // Role-based access
-app.use('/api/admin/*', requireAuth({ roles: ['admin'] }))
+app.use('/api/admin/*', requireAuth({ jwksUri: 'https://api.workos.com/sso/jwks/client_xxx', roles: ['admin'] }))
 
 // Permission-based access
-app.use('/api/billing/*', requireAuth({ permissions: ['billing:read', 'billing:write'] }))
+app.use('/api/billing/*', requireAuth({ jwksUri: 'https://api.workos.com/sso/jwks/client_xxx', permissions: ['billing:read', 'billing:write'] }))
 ```
 
 ### API Key Authentication
@@ -314,7 +314,7 @@ app.use('/api/v1/*', apiKey({
 
 // Combined: JWT or API key
 app.use('/api/*', combined({
-  auth: { cookieName: 'session' },
+  auth: { jwksUri: 'https://api.workos.com/sso/jwks/client_xxx', cookieName: 'session' },
   apiKey: {
     verify: async (key) => verifyApiKey(key)
   }
