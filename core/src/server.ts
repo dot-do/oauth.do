@@ -46,7 +46,7 @@ import {
   generateLoginFormHtml,
 } from './dev.js'
 import type { SigningKeyManager, AccessTokenClaims } from './jwt-signing.js'
-import { decodeJWT } from './jwt.js'
+import { decodeJWT, verifyJWT } from './jwt.js'
 
 /**
  * Configuration for the OAuth 2.1 server
@@ -87,6 +87,12 @@ export interface OAuth21ServerConfig {
    * Requires signingKeyManager to be set, or will auto-create one in memory.
    */
   useJwtAccessTokens?: boolean
+  /**
+   * Trusted issuers for X-Issuer header validation (optional).
+   * If set, only X-Issuer values in this list will be accepted.
+   * If not set, any valid URL is accepted (backwards compatible).
+   */
+  trustedIssuers?: string[]
 }
 
 /**
@@ -145,7 +151,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     upstream,
     devMode,
     scopes = ['openid', 'profile', 'email', 'offline_access'],
-    accessTokenTtl = 172800, // 48 hours
+    accessTokenTtl = 3600, // 1 hour
     refreshTokenTtl = 2592000,
     authCodeTtl = 600,
     enableDynamicRegistration = true,
@@ -154,6 +160,7 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     allowedOrigins,
     signingKeyManager: providedSigningKeyManager,
     useJwtAccessTokens = false,
+    trustedIssuers,
   } = config
 
   /**
@@ -168,7 +175,17 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       // Validate it's a proper URL
       try {
         new URL(xIssuer)
-        return xIssuer.replace(/\/$/, '') // Remove trailing slash
+        const normalized = xIssuer.replace(/\/$/, '') // Remove trailing slash
+        // If trustedIssuers is configured, only accept values in the list
+        if (trustedIssuers) {
+          if (!trustedIssuers.includes(normalized)) {
+            if (debug) {
+              console.warn('[OAuth] X-Issuer not in trustedIssuers list:', normalized)
+            }
+            return defaultIssuer
+          }
+        }
+        return normalized
       } catch {
         if (debug) {
           console.warn('[OAuth] Invalid X-Issuer header:', xIssuer)
@@ -228,6 +245,10 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       scope,
       email: user.email,
       name: user.name,
+      // Include RBAC claims from user
+      ...(user.organizationId && { org_id: user.organizationId }),
+      ...(user.roles && user.roles.length > 0 && { roles: user.roles }),
+      ...(user.permissions && user.permissions.length > 0 && { permissions: user.permissions }),
     }, {
       issuer: issuerOverride || defaultIssuer,
       audience: clientId,
@@ -379,7 +400,32 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     // Try to decode as JWT first
     const decoded = decodeJWT(token)
     if (decoded) {
-      // It's a JWT - verify claims
+      // It's a JWT - verify signature and claims
+      const effectiveIssuer = getEffectiveIssuer(c)
+
+      // Verify JWT signature using the signing key manager's public key
+      let signatureValid = false
+      if (signingKeyManager || useJwtAccessTokens) {
+        try {
+          const key = await ensureSigningKey()
+          const result = await verifyJWT(token, {
+            publicKey: key.publicKey,
+            issuer: decoded.payload.iss === effectiveIssuer ? effectiveIssuer : defaultIssuer,
+          })
+          signatureValid = result.valid
+        } catch {
+          // Signature verification failed
+          signatureValid = false
+        }
+      } else {
+        // No signing key manager available - cannot verify signature
+        return c.json({ active: false })
+      }
+
+      if (!signatureValid) {
+        return c.json({ active: false })
+      }
+
       const now = Math.floor(Date.now() / 1000)
 
       // Check expiration
@@ -388,16 +434,9 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
       }
 
       // Check issuer - accept tokens from any issuer we could have issued
-      // Since we use the same signing keys, tokens with any valid issuer are acceptable
-      // The X-Issuer header can specify which issuer to accept, or we accept the default
-      const effectiveIssuer = getEffectiveIssuer(c)
       if (decoded.payload.iss && decoded.payload.iss !== effectiveIssuer && decoded.payload.iss !== defaultIssuer) {
-        // Token's issuer doesn't match either the requested issuer or our default
         return c.json({ active: false })
       }
-
-      // Note: In production, you should also verify the signature using the JWKS
-      // For now, we trust the JWT structure and claims
 
       return c.json({
         active: true,
@@ -1035,6 +1074,26 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
    * Returns: { token: "jwt", expiresIn: 3600 }
    */
   app.post('/exchange', async (c) => {
+    // Validate origin to prevent intercepted codes from being exchanged by unauthorized parties
+    const origin = c.req.header('Origin') || c.req.header('Referer')
+    if (origin) {
+      try {
+        const originUrl = new URL(origin)
+        const issuerUrl = new URL(defaultIssuer)
+        const isAllowed = corsOrigins.includes('*') ||
+          corsOrigins.includes(originUrl.origin) ||
+          originUrl.origin === issuerUrl.origin
+        if (!isAllowed) {
+          return c.json({ error: 'invalid_request', error_description: 'Origin not allowed' } as OAuthError, 403)
+        }
+      } catch {
+        return c.json({ error: 'invalid_request', error_description: 'Invalid Origin header' } as OAuthError, 400)
+      }
+    } else if (!devMode?.enabled) {
+      // In production, require Origin or Referer header
+      return c.json({ error: 'invalid_request', error_description: 'Origin header is required' } as OAuthError, 403)
+    }
+
     const body = await c.req.json<{ code: string }>()
     const code = body.code
 
@@ -1339,6 +1398,20 @@ function buildUpstreamAuthUrl(
   return url.toString()
 }
 
+/**
+ * User info extracted from upstream provider
+ */
+interface UpstreamUser {
+  id: string
+  email: string
+  first_name?: string
+  last_name?: string
+  organization_id?: string
+  role?: string
+  roles?: string[]
+  permissions?: string[]
+}
+
 async function exchangeUpstreamCode(
   upstream: UpstreamOAuthConfig,
   code: string,
@@ -1347,13 +1420,7 @@ async function exchangeUpstreamCode(
   access_token: string
   refresh_token?: string
   expires_in?: number
-  user: {
-    id: string
-    email: string
-    first_name?: string
-    last_name?: string
-    organization_id?: string
-  }
+  user: UpstreamUser
 }> {
   if (upstream.provider === 'workos') {
     const response = await fetch('https://api.workos.com/user_management/authenticate', {
@@ -1374,7 +1441,44 @@ async function exchangeUpstreamCode(
       throw new Error(`WorkOS authentication failed: ${response.status} - ${error}`)
     }
 
-    return response.json()
+    const data = await response.json() as {
+      access_token: string
+      refresh_token?: string
+      expires_in?: number
+      user: UpstreamUser
+    }
+
+    // Extract roles from WorkOS JWT access_token
+    // The WorkOS JWT contains 'role' claim for the user's role in the organization
+    try {
+      const decoded = decodeJWT(data.access_token)
+      if (decoded?.payload) {
+        // WorkOS uses 'role' for single role (from organization membership)
+        const role = decoded.payload['role'] as string | undefined
+        // Some setups may use 'roles' array
+        const roles = decoded.payload['roles'] as string[] | undefined
+        // Permissions may also be in the JWT
+        const permissions = decoded.payload['permissions'] as string[] | undefined
+
+        // Merge role info into user object
+        if (role) {
+          data.user.role = role
+          // Also add to roles array for consistency
+          data.user.roles = roles ? [...roles, role] : [role]
+        } else if (roles) {
+          data.user.roles = roles
+        }
+
+        if (permissions) {
+          data.user.permissions = permissions
+        }
+      }
+    } catch {
+      // JWT decode failed - continue without roles
+      // Roles may come from a different source (API calls, etc.)
+    }
+
+    return data
   }
 
   // Custom provider
@@ -1406,7 +1510,7 @@ async function exchangeUpstreamCode(
 
 async function getOrCreateUser(
   storage: OAuthStorage,
-  upstreamUser: { id: string; email: string; first_name?: string; last_name?: string; organization_id?: string },
+  upstreamUser: UpstreamUser,
   onUserAuthenticated?: (user: OAuthUser) => void | Promise<void>
 ): Promise<OAuthUser> {
   // Try to find existing user by email
@@ -1420,15 +1524,27 @@ async function getOrCreateUser(
       email: upstreamUser.email,
       ...(fullName && { name: fullName }),
       ...(upstreamUser.organization_id !== undefined && { organizationId: upstreamUser.organization_id }),
+      ...(upstreamUser.roles && upstreamUser.roles.length > 0 && { roles: upstreamUser.roles }),
+      ...(upstreamUser.permissions && upstreamUser.permissions.length > 0 && { permissions: upstreamUser.permissions }),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       lastLoginAt: Date.now(),
     }
     await storage.saveUser(user)
   } else {
-    // Update last login
+    // Update last login and refresh roles/permissions from upstream
     user.lastLoginAt = Date.now()
     user.updatedAt = Date.now()
+    // Update org, roles, permissions on each login (they may change in upstream)
+    if (upstreamUser.organization_id !== undefined) {
+      user.organizationId = upstreamUser.organization_id
+    }
+    if (upstreamUser.roles && upstreamUser.roles.length > 0) {
+      user.roles = upstreamUser.roles
+    }
+    if (upstreamUser.permissions && upstreamUser.permissions.length > 0) {
+      user.permissions = upstreamUser.permissions
+    }
     await storage.saveUser(user)
   }
 

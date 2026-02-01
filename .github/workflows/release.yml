@@ -38,8 +38,11 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Type check
+        run: pnpm tsc --noEmit
+
       - name: Run tests
-        run: pnpm test || true
+        run: pnpm test
 
       - name: Create Release Pull Request or Publish
         id: changesets

@@ -94,7 +94,7 @@ export interface StripeClient {
     }>
   }
   webhooks: {
-    constructEvent(payload: string, signature: string, secret: string): StripeWebhookEvent
+    constructEvent(payload: string, signature: string, secret: string): Promise<StripeWebhookEvent>
   }
 }
 
@@ -298,10 +298,7 @@ export function createStripeClient(secretKey: string): StripeClient {
       retrieve: (id) => stripeRequest('GET', `/subscriptions/${id}`),
     },
     webhooks: {
-      constructEvent: (payload, signature, _secret) => {
-        // Simple webhook verification
-        // Note: This is a synchronous method that parses and does basic validation
-        // For proper async HMAC verification, use verifyStripeWebhookAsync() instead
+      constructEvent: async (payload, signature, secret) => {
         const event = JSON.parse(payload) as StripeWebhookEvent
 
         // Parse the signature header
@@ -314,9 +311,16 @@ export function createStripeClient(secretKey: string): StripeClient {
           throw new Error('Webhook timestamp too old')
         }
 
-        // Note: Full signature verification requires async crypto
-        // The caller should use verifyStripeWebhookAsync() for complete verification
-        // _secret is available for future async verification
+        // Verify HMAC-SHA256 signature
+        const expectedSignature = await computeStripeSignature(
+          signatureHeader.timestamp,
+          payload,
+          secret
+        )
+
+        if (!timingSafeEqual(signatureHeader.v1, expectedSignature)) {
+          throw new Error('Invalid webhook signature')
+        }
 
         return event
       },
@@ -351,7 +355,7 @@ function flattenObject(
 /**
  * Parse Stripe webhook signature header
  */
-function parseStripeSignature(header: string): { timestamp: number; v1: string } {
+export function parseStripeSignature(header: string): { timestamp: number; v1: string } {
   const parts = header.split(',')
   let timestamp = 0
   let v1 = ''
@@ -375,7 +379,7 @@ function parseStripeSignature(header: string): { timestamp: number; v1: string }
 /**
  * Compute expected Stripe webhook signature
  */
-async function computeStripeSignature(
+export async function computeStripeSignature(
   timestamp: number,
   payload: string,
   secret: string
@@ -401,14 +405,11 @@ async function computeStripeSignature(
 /**
  * Timing-safe string comparison
  */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false
-  }
-
-  let result = 0
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+export function timingSafeEqual(a: string, b: string): boolean {
+  const maxLen = Math.max(a.length, b.length)
+  let result = a.length ^ b.length
+  for (let i = 0; i < maxLen; i++) {
+    result |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0)
   }
 
   return result === 0

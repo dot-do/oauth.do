@@ -2,11 +2,20 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "auth",
   "account_id": "b6641681fe423910342b9ffa1364c76d",
-  "main": "src/index.ts",
+  "main": "index.ts",
   "compatibility_date": "2026-01-25",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Service binding to OAuth worker for JWKS
+  // Environment variables
+  "vars": {
+    "WORKOS_CLIENT_ID": "client_01JQYTRXK9ZPD8JPJTKDCRB656"
+  },
+
+  // Secrets (set via wrangler secret put):
+  // - WORKOS_API_KEY
+  // - ADMIN_TOKEN
+
+  // Service binding to OAuth worker for API key verification
   "services": [
     {
       "binding": "OAUTH",

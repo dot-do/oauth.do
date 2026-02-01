@@ -239,12 +239,64 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
   })
 
   // Logout
-  app.post('/logout', (c) => {
+  app.post('/logout', async (c) => {
+    // Extract token from body or Authorization header
+    let token: string | undefined
+    try {
+      const body = await c.req.json<{ token?: string }>()
+      token = body?.token
+    } catch {
+      // No JSON body, check Authorization header
+    }
+    if (!token) {
+      const authHeader = c.req.header('Authorization')
+      if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.slice(7)
+      }
+    }
+
+    // If a token was provided, forward revocation to the Durable Object
+    if (token) {
+      try {
+        const stub = getOAuthDO(c.env)
+        const revokeRequest = new Request(new URL('/revoke', c.req.url).toString(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ token }),
+        })
+        await stub.fetch(revokeRequest)
+      } catch (err) {
+        console.error('Token revocation error during logout:', err)
+        // Still return success - client-side logout should proceed
+      }
+    }
+
     return c.json({ success: true })
   })
 
   app.get('/logout', (c) => {
     const redirectTo = c.req.query('redirect_to') || '/'
+
+    // Validate redirect_to against allowed origins to prevent open redirect
+    if (redirectTo !== '/' && !redirectTo.startsWith('//')) {
+      try {
+        const url = new URL(redirectTo, 'https://placeholder.invalid')
+        // If it's an absolute URL, check origin against allowed list
+        if (/^https?:\/\//.test(redirectTo)) {
+          const allowedOrigins = c.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) || []
+          if (!allowedOrigins.includes(url.origin)) {
+            return c.redirect('/')
+          }
+        } else if (!redirectTo.startsWith('/')) {
+          // Reject anything that isn't a relative path starting with /
+          return c.redirect('/')
+        }
+      } catch {
+        // Invalid URL, redirect to /
+        return c.redirect('/')
+      }
+    }
+
     return c.redirect(redirectTo)
   })
 

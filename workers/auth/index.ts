@@ -25,6 +25,7 @@ interface Env {
   WORKOS_CLIENT_ID: string
   WORKOS_API_KEY?: string
   ADMIN_TOKEN?: string
+  ALLOWED_ORIGINS?: string
   // RPC binding to OAuth worker for API key verification
   OAUTH?: Fetcher
 }
@@ -60,6 +61,19 @@ const JWKS_CACHE_TTL = 60 * 60 * 1000 // 1 hour
 // ═══════════════════════════════════════════════════════════════════════════
 // Utilities
 // ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Extract roles from JWT payload, handling both WorkOS 'role' (singular)
+ * and 'roles' (array) claims
+ */
+function extractRoles(payload: jose.JWTPayload): string[] | undefined {
+  const roles = payload.roles as string[] | undefined
+  const role = payload.role as string | undefined
+  if (roles && role && !roles.includes(role)) {
+    return [...roles, role]
+  }
+  return roles ?? (role ? [role] : undefined)
+}
 
 async function hashToken(token: string): Promise<string> {
   const data = new TextEncoder().encode(token)
@@ -102,7 +116,24 @@ async function cacheResult(token: string, result: VerifyResult): Promise<void> {
   }
 }
 
-async function getJwks(clientId: string): Promise<jose.JWTVerifyGetKey> {
+// oauth.do JWKS cache (for tokens issued by oauth.do)
+let oauthJwksCache: jose.JWTVerifyGetKey | null = null
+let oauthJwksCacheExpiry = 0
+
+async function getOAuthJwks(): Promise<jose.JWTVerifyGetKey> {
+  const now = Date.now()
+  if (oauthJwksCache && oauthJwksCacheExpiry > now) {
+    return oauthJwksCache
+  }
+
+  const jwksUri = 'https://oauth.do/.well-known/jwks.json'
+  oauthJwksCache = jose.createRemoteJWKSet(new URL(jwksUri))
+  oauthJwksCacheExpiry = now + JWKS_CACHE_TTL
+  return oauthJwksCache
+}
+
+// WorkOS JWKS cache (for tokens issued directly by WorkOS)
+async function getWorkosJwks(clientId: string): Promise<jose.JWTVerifyGetKey> {
   const now = Date.now()
   if (jwksCache && jwksCacheExpiry > now) {
     return jwksCache
@@ -119,24 +150,49 @@ async function getJwks(clientId: string): Promise<jose.JWTVerifyGetKey> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function verifyJWT(token: string, env: Env): Promise<VerifyResult> {
+  // Try oauth.do JWKS first (tokens issued by oauth.do platform)
+  // No audience/issuer constraint - oauth.do tokens may have various audiences
+  // (e.g., 'first-party' for login flow, client_id for OAuth flow)
+  // and various issuers (e.g., 'https://oauth.do', 'https://events.do' via X-Issuer)
+  let oauthError: string | undefined
   try {
-    const jwks = await getJwks(env.WORKOS_CLIENT_ID)
-    const { payload } = await jose.jwtVerify(token, jwks, {
-      audience: env.WORKOS_CLIENT_ID,
-    })
+    const oauthJwks = await getOAuthJwks()
+    const { payload } = await jose.jwtVerify(token, oauthJwks)
 
     const user: AuthUser = {
       id: payload.sub || '',
       email: payload.email as string | undefined,
       name: payload.name as string | undefined,
       organizationId: payload.org_id as string | undefined,
-      roles: payload.roles as string[] | undefined,
+      roles: extractRoles(payload),
       permissions: payload.permissions as string[] | undefined,
     }
 
     return { valid: true, user }
   } catch (err) {
-    return { valid: false, error: err instanceof Error ? err.message : 'JWT verification failed' }
+    oauthError = err instanceof Error ? err.message : 'oauth.do JWKS verification failed'
+  }
+
+  // Try WorkOS JWKS (tokens issued directly by WorkOS)
+  // WorkOS session tokens (from device flow) may not have an 'aud' claim,
+  // so we verify without audience constraint first, then with audience as fallback
+  try {
+    const workosJwks = await getWorkosJwks(env.WORKOS_CLIENT_ID)
+    const { payload } = await jose.jwtVerify(token, workosJwks)
+
+    const user: AuthUser = {
+      id: payload.sub || '',
+      email: payload.email as string | undefined,
+      name: payload.name as string | undefined,
+      organizationId: payload.org_id as string | undefined,
+      roles: extractRoles(payload),
+      permissions: payload.permissions as string[] | undefined,
+    }
+
+    return { valid: true, user }
+  } catch (err) {
+    const workosError = err instanceof Error ? err.message : 'WorkOS JWKS verification failed'
+    return { valid: false, error: `JWT verification failed (oauth.do: ${oauthError}, WorkOS: ${workosError})` }
   }
 }
 
@@ -252,7 +308,21 @@ async function verifyToken(token: string, env: Env): Promise<VerifyResult> {
 
 const app = new Hono<{ Bindings: Env }>()
 
-app.use('*', cors())
+app.use('*', async (c, next) => {
+  const allowedOrigins = c.env.ALLOWED_ORIGINS
+    ? c.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+    : []
+
+  return cors({
+    origin: (origin) => {
+      if (allowedOrigins.length === 0) return ''
+      return allowedOrigins.includes(origin) ? origin : ''
+    },
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Authorization', 'Content-Type', 'Cookie'],
+    maxAge: 86400,
+  })(c, next)
+})
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', service: 'auth' }))
@@ -327,4 +397,123 @@ app.post('/invalidate', async (c) => {
   }
 })
 
+// ═══════════════════════════════════════════════════════════════════════════
+// RPC Entrypoint - Zero bundle overhead for consumers
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { WorkerEntrypoint } from 'cloudflare:workers'
+
+/** Auth result for RPC calls */
+export type AuthResult =
+  | { ok: true; user: AuthUser }
+  | { ok: false; status: number; error: string }
+
+/**
+ * AuthRPC - Workers RPC entrypoint for authentication
+ *
+ * Consumers bind to this via service bindings for zero-bundle-overhead auth.
+ *
+ * @example
+ * ```typescript
+ * // wrangler.jsonc
+ * "services": [{ "binding": "AUTH", "service": "auth-do", "entrypoint": "AuthRPC" }]
+ *
+ * // In your worker
+ * const result = await env.AUTH.verifyToken(token)
+ * ```
+ */
+export class AuthRPC extends WorkerEntrypoint<Env> {
+  /**
+   * Verify any token type (JWT, API key, admin token)
+   * Results are cached for 5 minutes
+   */
+  async verifyToken(token: string): Promise<VerifyResult> {
+    try {
+      // Check required environment
+      if (!this.env.WORKOS_CLIENT_ID) {
+        return { valid: false, error: 'WORKOS_CLIENT_ID not configured' }
+      }
+      return await verifyToken(token, this.env)
+    } catch (err) {
+      console.error('[AuthRPC.verifyToken] Unexpected error:', err)
+      return { valid: false, error: err instanceof Error ? err.message : 'Verification failed' }
+    }
+  }
+
+  /**
+   * Get user from token, returns null if invalid
+   */
+  async getUser(token: string): Promise<AuthUser | null> {
+    const result = await this.verifyToken(token)
+    return result.valid && result.user ? result.user : null
+  }
+
+  /**
+   * Authenticate from Authorization header and/or cookie value
+   * Returns structured result for middleware use
+   */
+  async authenticate(
+    authorization?: string | null,
+    cookie?: string | null
+  ): Promise<AuthResult> {
+    // Extract token from Authorization header or cookie
+    const token =
+      authorization?.replace(/^Bearer\s+/i, '') ||
+      cookie?.match(/(?:^|;\s*)auth=([^;]+)/)?.[1]
+
+    if (!token) {
+      return { ok: false, status: 401, error: 'No token provided' }
+    }
+
+    const result = await this.verifyToken(token)
+
+    if (!result.valid || !result.user) {
+      return { ok: false, status: 401, error: result.error || 'Invalid token' }
+    }
+
+    return { ok: true, user: result.user }
+  }
+
+  /**
+   * Check if token has any of the specified roles
+   */
+  async hasRoles(token: string, roles: string[]): Promise<boolean> {
+    const user = await this.getUser(token)
+    if (!user?.roles) return false
+    return roles.some((r) => user.roles!.includes(r))
+  }
+
+  /**
+   * Check if token has all of the specified permissions
+   */
+  async hasPermissions(token: string, permissions: string[]): Promise<boolean> {
+    const user = await this.getUser(token)
+    if (!user?.permissions) return false
+    return permissions.every((p) => user.permissions!.includes(p))
+  }
+
+  /**
+   * Check if token belongs to an admin user
+   */
+  async isAdmin(token: string): Promise<boolean> {
+    return this.hasRoles(token, ['admin'])
+  }
+
+  /**
+   * Invalidate cached result for a token
+   */
+  async invalidate(token: string): Promise<boolean> {
+    try {
+      const cache = caches.default
+      const hash = await hashToken(token)
+      const cacheKey = new Request(`${CACHE_URL_PREFIX}${hash}`)
+      await cache.delete(cacheKey)
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
+// Export Hono app as default (keeps HTTP API working)
 export default app
