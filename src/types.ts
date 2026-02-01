@@ -22,35 +22,13 @@
  * - `TokenStorage` - oauth.do uses different method signatures for backwards compatibility
  */
 
-// Import Wire Protocol types from @dotdo/types (RFC compliant, snake_case)
-import type {
-	DeviceFlowError as DotdoDeviceFlowError,
-	DeviceAuthorizationResponseWire,
-	TokenResponseWire,
-	OAuthErrorWire,
-	AuthorizationRequestWire,
-	OAuthUser,
-	WireToSdk,
-	SdkToWire,
-} from '@dotdo/types/auth'
+// Note: @dotdo/types is an optional peer dependency
+// These types are defined locally for build compatibility when @dotdo/types is not installed
 
 /**
- * Device flow error types - re-exported from @dotdo/types
- *
- * Note: oauth.do also includes 'unknown' for unhandled errors
+ * Device flow error types
  */
-export type { DeviceFlowError as DotdoDeviceFlowError } from '@dotdo/types/auth'
-
-// Re-export Wire Protocol types for consumers
-export type {
-	DeviceAuthorizationResponseWire,
-	TokenResponseWire,
-	OAuthErrorWire,
-	AuthorizationRequestWire,
-	OAuthUser,
-	WireToSdk,
-	SdkToWire,
-} from '@dotdo/types/auth'
+export type DeviceFlowError = 'authorization_pending' | 'slow_down' | 'access_denied' | 'expired_token'
 
 /**
  * OAuth configuration options
@@ -120,11 +98,6 @@ export interface AuthUser {
 }
 
 /**
- * Re-export @dotdo/types User for consumers who want the full type
- */
-export type { User as DotdoUser } from '@dotdo/types/auth'
-
-/**
  * Authentication result
  */
 export interface AuthResult {
@@ -135,49 +108,51 @@ export interface AuthResult {
 /**
  * Device authorization response (OAuth wire format - snake_case)
  *
- * Re-exported from @dotdo/types/auth as DeviceAuthorizationResponseWire.
  * Uses snake_case property names as per OAuth 2.0 Device Authorization Grant (RFC 8628).
- *
- * @see DeviceAuthorizationResponseWire for the underlying type
  */
-export interface DeviceAuthorizationResponse extends DeviceAuthorizationResponseWire {
-	/** Optional verification URI with user code embedded (required in oauth.do) */
+export interface DeviceAuthorizationResponse {
+	/** The device verification code */
+	device_code: string
+	/** The end-user verification code */
+	user_code: string
+	/** The end-user verification URI */
+	verification_uri: string
+	/** Optional verification URI with user code embedded */
 	verification_uri_complete: string
-	/** Minimum polling interval in seconds (required in oauth.do) */
+	/** Lifetime in seconds of the device_code and user_code */
+	expires_in: number
+	/** Minimum polling interval in seconds */
 	interval: number
 }
 
 /**
- * Re-export @dotdo/types DeviceAuthorizationResponse (camelCase version)
- */
-export type { DeviceAuthorizationResponse as DotdoDeviceAuthorizationResponse } from '@dotdo/types/auth'
-
-/**
  * Token response (OAuth wire format - snake_case)
  *
- * Extends TokenResponseWire from @dotdo/types/auth with optional user field.
  * Uses snake_case property names as per OAuth 2.0 token endpoint responses (RFC 6749).
- *
- * @see TokenResponseWire for the underlying type
  */
-export interface TokenResponse extends TokenResponseWire {
+export interface TokenResponse {
+	/** The access token issued by the authorization server */
+	access_token: string
+	/** The type of the token issued (always "Bearer") */
+	token_type: string
+	/** The lifetime in seconds of the access token */
+	expires_in?: number
+	/** The refresh token, which can be used to obtain new access tokens */
+	refresh_token?: string
+	/** The scope of the access token */
+	scope?: string
 	/** User information returned from authentication (oauth.do extension) */
 	user?: User
 }
 
 /**
- * Re-export @dotdo/types TokenResponse (camelCase version)
- */
-export type { TokenResponse as DotdoTokenResponse } from '@dotdo/types/auth'
-
-/**
  * Token polling error types
  *
  * @remarks
- * Extends @dotdo/types DeviceFlowError with 'unknown' for unhandled errors.
+ * Extends DeviceFlowError with 'unknown' for unhandled errors.
  */
 export type TokenError =
-	| DotdoDeviceFlowError
+	| DeviceFlowError
 	| 'unknown'
 
 /**
@@ -197,11 +172,6 @@ export interface StoredTokenData {
 	/** Token expiration timestamp (ms since epoch) */
 	expiresAt?: number
 }
-
-/**
- * Re-export @dotdo/types StoredTokenData for consumers who want the full type
- */
-export type { StoredTokenData as DotdoStoredTokenData } from '@dotdo/types/auth'
 
 /**
  * Token storage interface
@@ -228,8 +198,3 @@ export interface TokenStorage {
 	/** Store full token data (optional for backwards compatibility) */
 	setTokenData?(data: StoredTokenData): Promise<void>
 }
-
-/**
- * Re-export @dotdo/types TokenStorage for consumers who want the key-value interface
- */
-export type { TokenStorage as DotdoTokenStorage } from '@dotdo/types/auth'

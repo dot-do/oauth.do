@@ -11,7 +11,9 @@
 		"typeRoots": [
 			"./types",
 			"./node_modules/@types"
-		]
+		],
+		"exactOptionalPropertyTypes": false,
+		"noPropertyAccessFromIndexSignature": false
 	},
 	"include": [
 		"src/**/*",

@@ -1,0 +1,21 @@
+{
+  "name": "oauth-hono-api-example",
+  "version": "1.0.0",
+  "description": "Hono API with oauth.do authentication middleware",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "dev": "wrangler dev index.ts",
+    "start": "npx tsx index.ts"
+  },
+  "dependencies": {
+    "oauth.do": "^0.2.5",
+    "hono": "^4.0.0",
+    "jose": "^5.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0",
+    "wrangler": "^3.0.0"
+  }
+}

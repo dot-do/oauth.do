@@ -15,8 +15,6 @@ import React, { createContext, useContext, type ReactNode } from 'react'
 import {
   IdentityProvider,
   useAuth as useMdxuiAuth,
-  SignInButton as MdxuiSignInButton,
-  SignOutButton as MdxuiSignOutButton,
   ApiKeys as MdxuiApiKeys,
   UsersManagement as MdxuiUsersManagement,
   UserProfile as MdxuiUserProfile,

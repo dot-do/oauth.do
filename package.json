@@ -1,6 +1,6 @@
 {
   "name": "oauth.do",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "OAuth authentication SDK, React components, and Hono middleware for org.ai identity",
   "type": "module",
   "sideEffects": false,

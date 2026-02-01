@@ -1,0 +1,17 @@
+{
+  "name": "oauth-cli-login-example",
+  "version": "1.0.0",
+  "description": "CLI login example using oauth.do",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "start": "npx tsx index.ts"
+  },
+  "dependencies": {
+    "oauth.do": "^0.2.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
