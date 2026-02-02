@@ -26,6 +26,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@tsndr/cloudflare-worker-jwt": "^3.2.1",
     "jose": "^5.2.0"
   },
   "devDependencies": {

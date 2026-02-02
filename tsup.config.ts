@@ -11,10 +11,11 @@ export default defineConfig({
 		'src/session.ts',
 		'src/session-hono.ts',
 		'src/types-export.ts',
+		'src/rpc.ts',
 	],
 	format: ['esm'],
 	dts: {
-		entry: ['src/index.ts', 'src/node.ts', 'src/react.tsx', 'src/hono.ts', 'src/itty.ts', 'src/session.ts', 'src/session-hono.ts', 'src/types-export.ts'],
+		entry: ['src/index.ts', 'src/node.ts', 'src/react.tsx', 'src/hono.ts', 'src/itty.ts', 'src/session.ts', 'src/session-hono.ts', 'src/types-export.ts', 'src/rpc.ts'],
 	},
 	splitting: false,
 	sourcemap: true,
