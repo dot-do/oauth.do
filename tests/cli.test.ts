@@ -19,6 +19,8 @@ vi.mock('../src/storage.js', () => {
 	const mockStorage = {
 		getToken: vi.fn(),
 		setToken: vi.fn(),
+		setTokenData: vi.fn(),
+		getTokenData: vi.fn(),
 		removeToken: vi.fn(),
 		getStorageInfo: vi.fn().mockResolvedValue({ type: 'file', secure: true, path: '~/.oauth.do/token' }),
 	}
@@ -50,6 +52,8 @@ import open from 'open'
 const mockStorage = __mockStorage as {
 	getToken: Mock
 	setToken: Mock
+	setTokenData: Mock
+	getTokenData: Mock
 	removeToken: Mock
 	getStorageInfo: Mock
 }
@@ -84,6 +88,8 @@ describe('CLI', () => {
 		// Reset mock storage default behavior
 		mockStorage.getToken.mockResolvedValue(null)
 		mockStorage.setToken.mockResolvedValue(undefined)
+		mockStorage.setTokenData.mockResolvedValue(undefined)
+		mockStorage.getTokenData.mockResolvedValue(null)
 		mockStorage.removeToken.mockResolvedValue(undefined)
 	})
 
@@ -354,8 +360,12 @@ describe('CLI', () => {
 				mockAuthResponse.expires_in
 			)
 
-			// Verify token was saved
-			expect(mockStorage.setToken).toHaveBeenCalledWith(mockTokenResponse.access_token)
+			// Verify token was saved with full data (including refresh token)
+			expect(mockStorage.setTokenData).toHaveBeenCalledWith({
+				accessToken: mockTokenResponse.access_token,
+				refreshToken: mockTokenResponse.refresh_token,
+				expiresAt: expect.any(Number),
+			})
 
 			// Verify user info was fetched
 			expect(getUser).toHaveBeenCalledWith(mockTokenResponse.access_token)
@@ -406,7 +416,11 @@ describe('CLI', () => {
 			await runCli(['login'])
 
 			// Should still complete login successfully
-			expect(mockStorage.setToken).toHaveBeenCalledWith(mockTokenResponse.access_token)
+			expect(mockStorage.setTokenData).toHaveBeenCalledWith({
+				accessToken: mockTokenResponse.access_token,
+				refreshToken: mockTokenResponse.refresh_token,
+				expiresAt: expect.any(Number),
+			})
 
 			// Should show manual instructions
 			const output = consoleLogSpy.mock.calls.map(call => call[0]).join('\n')

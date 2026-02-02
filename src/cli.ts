@@ -166,8 +166,13 @@ async function loginCommand() {
 			authResponse.expires_in
 		)
 
-		// Step 4: Save token
-		await storage.setToken(tokenResponse.access_token)
+		// Step 4: Save FULL token data (including refresh_token for auto-refresh)
+		const expiresAt = tokenResponse.expires_in ? Date.now() + tokenResponse.expires_in * 1000 : undefined
+		await storage.setTokenData({
+			accessToken: tokenResponse.access_token,
+			refreshToken: tokenResponse.refresh_token,
+			expiresAt,
+		})
 
 		// Step 5: Get user info
 		const authResult = await getUser(tokenResponse.access_token)
