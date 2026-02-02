@@ -71,7 +71,7 @@ export async function verifyCodeChallenge(
   }
 
   const expectedChallenge = await generateCodeChallenge(verifier)
-  return constantTimeEqual(expectedChallenge, challenge)
+  return await constantTimeEqual(expectedChallenge, challenge)
 }
 
 /**
@@ -126,18 +126,32 @@ export function base64UrlDecode(str: string): ArrayBuffer {
 /**
  * Constant-time string comparison to prevent timing attacks
  *
+ * Uses hash-based comparison to ensure constant-time behavior regardless of
+ * string lengths. Both strings are hashed with SHA-256 before comparison,
+ * which produces fixed-length outputs and prevents length-based timing leaks.
+ *
  * @param a - First string
  * @param b - Second string
  * @returns True if strings are equal
  */
-export function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false
-  }
+export async function constantTimeEqual(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder()
 
+  // Hash both strings to get fixed-length byte arrays
+  // This prevents any timing information from leaking based on string length
+  const [hashA, hashB] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(a)),
+    crypto.subtle.digest('SHA-256', encoder.encode(b))
+  ])
+
+  const bytesA = new Uint8Array(hashA)
+  const bytesB = new Uint8Array(hashB)
+
+  // Both arrays are always 32 bytes (SHA-256 output)
+  // Compare all bytes using XOR - result is 0 only if all bytes match
   let result = 0
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  for (let i = 0; i < 32; i++) {
+    result |= bytesA[i]! ^ bytesB[i]!
   }
 
   return result === 0
@@ -221,5 +235,5 @@ export async function hashClientSecret(secret: string): Promise<string> {
  */
 export async function verifyClientSecret(secret: string, hash: string): Promise<boolean> {
   const expectedHash = await hashClientSecret(secret)
-  return constantTimeEqual(expectedHash, hash)
+  return await constantTimeEqual(expectedHash, hash)
 }

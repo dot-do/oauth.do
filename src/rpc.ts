@@ -37,7 +37,6 @@ export type Service<T> = T
 // ═══════════════════════════════════════════════════════════════════════════
 export { type AuthUser } from "./types.js";
 import type { AuthUser } from "./types.js";
-}
 
 /**
  * Result of token verification (discriminated union on `valid`)

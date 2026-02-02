@@ -24,6 +24,9 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import type { SessionData, SessionConfig } from './session.js'
 import { encodeSession, decodeSession, defaultSessionConfig, getSessionConfig } from './session.js'
 
+/** Session config with optional secret (secret is derived at runtime if not provided) */
+type PartialSessionConfig = Omit<SessionConfig, 'secret'> & { secret?: string }
+
 // ─────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────
@@ -101,7 +104,7 @@ export interface SessionEnv {
 export async function setSessionCookie(
   c: Context,
   session: SessionData,
-  config: SessionConfig = defaultSessionConfig
+  config: PartialSessionConfig = defaultSessionConfig
 ): Promise<void> {
   const encoded = await encodeSession(session, config.secret)
   setCookie(c, config.cookieName, encoded, {
@@ -116,7 +119,7 @@ export async function setSessionCookie(
 /**
  * Clear session cookie
  */
-export function clearSessionCookie(c: Context, config: SessionConfig = defaultSessionConfig): void {
+export function clearSessionCookie(c: Context, config: PartialSessionConfig = defaultSessionConfig): void {
   deleteCookie(c, config.cookieName, { path: '/' })
 }
 
@@ -125,7 +128,7 @@ export function clearSessionCookie(c: Context, config: SessionConfig = defaultSe
  */
 export async function getSessionFromCookie(
   c: Context,
-  config: SessionConfig = defaultSessionConfig
+  config: PartialSessionConfig = defaultSessionConfig
 ): Promise<SessionData | null> {
   const encoded = getCookie(c, config.cookieName)
   if (!encoded) return null

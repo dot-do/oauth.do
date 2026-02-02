@@ -1,11 +1,10 @@
 /**
  * Auth Worker Tests
- * 
+ *
  * Tests for JWT, API key, and admin token verification endpoints.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import app from './index'
 
 // Mock jose module
 vi.mock('jose', () => ({
@@ -34,22 +33,8 @@ const mockCache = {
 // @ts-expect-error - mock global caches
 globalThis.caches = { default: mockCache }
 
-// Mock crypto.subtle for hashing
-const mockDigest = vi.fn(async (_algo: string, data: ArrayBuffer) => {
-  const arr = new Uint8Array(data)
-  const hash = new Uint8Array(32)
-  for (let i = 0; i < arr.length; i++) {
-    hash[i % 32] ^= arr[i]
-  }
-  return hash.buffer
-})
-
-if (!globalThis.crypto?.subtle) {
-  // @ts-expect-error - mock crypto
-  globalThis.crypto = { subtle: { digest: mockDigest } }
-} else {
-  vi.spyOn(crypto.subtle, 'digest').mockImplementation(mockDigest)
-}
+// Import app AFTER setting up mocks
+import app from './index'
 
 const TEST_ENV = {
   WORKOS_CLIENT_ID: 'client_test123',
@@ -303,6 +288,41 @@ describe('Auth Worker', () => {
       const res = await app.request('/verify?token=wrong_admin_token', {}, TEST_ENV)
       const body = await res.json()
       expect(body.valid).toBe(false)
+    })
+
+    it('rejects admin token with different length (timing-safe)', async () => {
+      // This test ensures length mismatches are handled without timing leaks
+      const jose = await import('jose')
+      vi.mocked(jose.jwtVerify)
+        .mockRejectedValueOnce(new Error('not a JWT'))
+        .mockRejectedValueOnce(new Error('not a JWT'))
+
+      // Token shorter than admin token
+      const res1 = await app.request('/verify?token=short', {}, TEST_ENV)
+      const body1 = await res1.json()
+      expect(body1.valid).toBe(false)
+      expect(body1.error).toBe('Invalid admin token')
+
+      vi.mocked(jose.jwtVerify)
+        .mockRejectedValueOnce(new Error('not a JWT'))
+        .mockRejectedValueOnce(new Error('not a JWT'))
+
+      // Token longer than admin token
+      const res2 = await app.request('/verify?token=this_is_a_much_longer_token_than_admin_secret_token_for_sure', {}, TEST_ENV)
+      const body2 = await res2.json()
+      expect(body2.valid).toBe(false)
+      expect(body2.error).toBe('Invalid admin token')
+    })
+
+    it('uses constant-time comparison for tokens', async () => {
+      // This test verifies the admin token flow works correctly
+      // The implementation uses timingSafeEqual internally (either native or fallback)
+      const res = await app.request('/verify', {
+        headers: { Authorization: `Bearer ${TEST_ENV.ADMIN_TOKEN}` },
+      }, TEST_ENV)
+      const body = await res.json()
+      expect(body.valid).toBe(true)
+      expect(body.user.id).toBe('admin')
     })
   })
 

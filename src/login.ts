@@ -9,6 +9,15 @@ import { createSecureStorage } from './storage.js'
 import { refreshAccessToken, getUser } from './auth.js'
 import type { StoredTokenData } from './types.js'
 import { getConfig } from './config.js'
+import { getEnv } from './utils.js'
+
+// Debug logging - enable with DEBUG=oauth.do or DEBUG=oauth.do:login
+function debug(...args: unknown[]): void {
+	const debugEnv = getEnv('DEBUG') || ''
+	if (debugEnv.includes('oauth.do') || debugEnv === '*') {
+		console.log('[oauth.do:login]', ...args)
+	}
+}
 
 export type { OAuthProvider } from './device.js'
 
@@ -70,17 +79,27 @@ async function doRefresh(
 	tokenData: StoredTokenData,
 	storage: LoginOptions['storage']
 ): Promise<LoginResult> {
+	debug('doRefresh called')
+
 	// Check if a refresh is already in progress
 	if (refreshInProgress) {
+		debug('Refresh already in progress, waiting...')
 		return refreshInProgress
 	}
 
 	refreshInProgress = (async () => {
 		try {
+			debug('Calling refreshAccessToken with refresh token:', tokenData.refreshToken?.substring(0, 20) + '...')
 			const newTokens = await refreshAccessToken(tokenData.refreshToken!)
+			debug('refreshAccessToken returned:', {
+				hasAccessToken: !!newTokens.access_token,
+				hasRefreshToken: !!newTokens.refresh_token,
+				expiresIn: newTokens.expires_in,
+			})
 
 			// Calculate new expiration time
 			const expiresAt = newTokens.expires_in ? Date.now() + newTokens.expires_in * 1000 : undefined
+			debug('New expiresAt:', expiresAt ? new Date(expiresAt).toISOString() : 'NOT SET (no expires_in)')
 
 			// Store new token data
 			const newData: StoredTokenData = {
@@ -90,13 +109,18 @@ async function doRefresh(
 			}
 
 			if (storage?.setTokenData) {
+				debug('Storing new token data via setTokenData')
 				await storage.setTokenData(newData)
 			} else if (storage?.setToken) {
+				debug('WARNING: Storage does not have setTokenData, using setToken (refresh token will be LOST)')
 				await storage.setToken(newTokens.access_token)
+			} else {
+				debug('ERROR: Storage has neither setTokenData nor setToken!')
 			}
 
 			// Update in-memory cache so parallel callers get the new token
 			cachedResult = { token: newTokens.access_token, expiresAt }
+			debug('Refresh complete, token cached')
 
 			return { token: newTokens.access_token, isNewLogin: false }
 		} finally {
@@ -154,8 +178,15 @@ async function doDeviceLogin(options: LoginOptions): Promise<LoginResult> {
 				authResponse.expires_in
 			)
 
+			debug('Device flow token response:', {
+				hasAccessToken: !!tokenResponse.access_token,
+				hasRefreshToken: !!tokenResponse.refresh_token,
+				expiresIn: tokenResponse.expires_in,
+			})
+
 			// Calculate expiration time
 			const expiresAt = tokenResponse.expires_in ? Date.now() + tokenResponse.expires_in * 1000 : undefined
+			debug('Calculated expiresAt:', expiresAt ? new Date(expiresAt).toISOString() : 'NOT SET')
 
 			// Store full token data including refresh token
 			const newData: StoredTokenData = {
@@ -165,8 +196,10 @@ async function doDeviceLogin(options: LoginOptions): Promise<LoginResult> {
 			}
 
 			if (storage.setTokenData) {
+				debug('Storing token data via setTokenData')
 				await storage.setTokenData(newData)
 			} else {
+				debug('WARNING: setTokenData not available, refresh token LOST')
 				await storage.setToken(tokenResponse.access_token)
 			}
 
@@ -189,52 +222,106 @@ async function doDeviceLogin(options: LoginOptions): Promise<LoginResult> {
  * Uses singleton pattern to prevent multiple concurrent login/refresh attempts
  */
 export async function ensureLoggedIn(options: LoginOptions = {}): Promise<LoginResult> {
+	debug('ensureLoggedIn called')
+
 	// Fast path: return cached token if still valid (no disk I/O, no race)
 	if (cachedResult && cachedResult.expiresAt && !isTokenExpired(cachedResult.expiresAt)) {
+		debug('Fast path: returning cached token (expires:', new Date(cachedResult.expiresAt).toISOString(), ')')
 		return { token: cachedResult.token, isNewLogin: false }
 	}
 
 	// If a refresh or login is already in flight, wait for it
-	if (refreshInProgress) return refreshInProgress
-	if (loginInProgress) return loginInProgress
+	if (refreshInProgress) {
+		debug('Waiting for refresh already in progress')
+		return refreshInProgress
+	}
+	if (loginInProgress) {
+		debug('Waiting for login already in progress')
+		return loginInProgress
+	}
 
 	const config = getConfig()
 	const { storage = createSecureStorage(config.storagePath) } = options
+	debug('Storage path:', config.storagePath)
 
 	// Check for existing token data
+	const hasGetTokenData = !!storage.getTokenData
+	debug('Storage has getTokenData method:', hasGetTokenData)
+
 	const tokenData = storage.getTokenData ? await storage.getTokenData() : null
+	debug('TokenData from storage:', tokenData ? {
+		hasAccessToken: !!tokenData.accessToken,
+		hasRefreshToken: !!tokenData.refreshToken,
+		expiresAt: tokenData.expiresAt ? new Date(tokenData.expiresAt).toISOString() : 'NOT SET',
+		isExpired: tokenData.expiresAt ? isTokenExpired(tokenData.expiresAt) : 'unknown (no expiresAt)',
+	} : 'NULL - no token data')
+
 	const existingToken = tokenData?.accessToken || (await storage.getToken())
+	debug('Existing token:', existingToken ? `${existingToken.substring(0, 20)}...` : 'NULL')
 
 	if (existingToken) {
 		// If we have expiration info and token is not expired, cache and return
 		if (tokenData?.expiresAt && !isTokenExpired(tokenData.expiresAt)) {
+			debug('Token has expiresAt and is NOT expired - returning existing token')
 			cachedResult = { token: existingToken, expiresAt: tokenData.expiresAt }
 			return { token: existingToken, isNewLogin: false }
 		}
 
-		// Token is expired or no expiration info - try to refresh
+		// Token is expired or expiration unknown - try to refresh if we have a refresh token
 		if (tokenData?.refreshToken) {
-			try {
-				const result = await doRefresh(tokenData, storage)
-				return result
-			} catch (error) {
-				// Refresh failed - might need to re-login
-				console.warn('Token refresh failed:', error)
-				// Fall through to device flow
-			}
-		}
+			debug('Has refresh token:', tokenData.refreshToken.substring(0, 20) + '...')
 
-		// No expiration info and no refresh token - validate with network call
-		if (!tokenData?.expiresAt && !tokenData?.refreshToken) {
+			// If token is definitely expired (has expiresAt and it's past), try refresh
+			if (tokenData.expiresAt && isTokenExpired(tokenData.expiresAt)) {
+				debug('Token IS EXPIRED - attempting refresh')
+				try {
+					const result = await doRefresh(tokenData, storage)
+					debug('Refresh SUCCEEDED')
+					return result
+				} catch (error) {
+					// Refresh failed - fall through to validate or re-login
+					debug('Refresh FAILED:', error)
+					console.warn('Token refresh failed:', error)
+				}
+			} else if (!tokenData.expiresAt) {
+				// No expiration info - validate token first, only refresh if invalid
+				debug('No expiresAt - validating token with getUser()')
+				const { user } = await getUser(existingToken)
+				if (user) {
+					debug('Token is VALID (user found) - returning existing token')
+					cachedResult = { token: existingToken }
+					return { token: existingToken, isNewLogin: false }
+				}
+				debug('Token is INVALID (no user) - attempting refresh')
+				// Token invalid, try to refresh
+				try {
+					const result = await doRefresh(tokenData, storage)
+					debug('Refresh SUCCEEDED')
+					return result
+				} catch (error) {
+					// Refresh failed - fall through to device flow
+					debug('Refresh FAILED:', error)
+					console.warn('Token refresh failed:', error)
+				}
+			}
+		} else {
+			debug('NO refresh token available')
+			// No refresh token - validate with network call
+			debug('Validating token with getUser()')
 			const { user } = await getUser(existingToken)
 			if (user) {
+				debug('Token is VALID (user found) - returning existing token')
 				cachedResult = { token: existingToken }
 				return { token: existingToken, isNewLogin: false }
 			}
+			debug('Token is INVALID (no user)')
 		}
+	} else {
+		debug('No existing token found')
 	}
 
 	// No valid token, start device flow (with singleton protection)
+	debug('>>> TRIGGERING DEVICE FLOW (browser login) <<<')
 	return doDeviceLogin(options)
 }
 

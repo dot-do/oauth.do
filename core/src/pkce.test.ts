@@ -180,14 +180,62 @@ describe('Base64URL', () => {
 })
 
 describe('constantTimeEqual', () => {
-  it('returns true for equal strings', () => {
-    expect(constantTimeEqual('abc', 'abc')).toBe(true)
-    expect(constantTimeEqual('', '')).toBe(true)
+  it('returns true for equal strings', async () => {
+    expect(await constantTimeEqual('abc', 'abc')).toBe(true)
+    expect(await constantTimeEqual('', '')).toBe(true)
   })
 
-  it('returns false for different strings', () => {
-    expect(constantTimeEqual('abc', 'abd')).toBe(false)
-    expect(constantTimeEqual('abc', 'ab')).toBe(false)
-    expect(constantTimeEqual('abc', 'abcd')).toBe(false)
+  it('returns false for different strings', async () => {
+    expect(await constantTimeEqual('abc', 'abd')).toBe(false)
+    expect(await constantTimeEqual('abc', 'ab')).toBe(false)
+    expect(await constantTimeEqual('abc', 'abcd')).toBe(false)
+  })
+
+  it('has constant-time behavior regardless of string length differences', async () => {
+    // This test verifies that comparing strings of different lengths
+    // takes approximately the same time as comparing strings of the same length.
+    // The hash-based approach ensures this by always comparing fixed-length hashes.
+
+    const iterations = 100
+    const baseString = 'a'.repeat(100)
+
+    // Measure time for same-length comparison (mismatch at end)
+    const sameLengthStart = performance.now()
+    for (let i = 0; i < iterations; i++) {
+      await constantTimeEqual(baseString, baseString.slice(0, -1) + 'b')
+    }
+    const sameLengthTime = performance.now() - sameLengthStart
+
+    // Measure time for different-length comparison (short vs long)
+    const diffLengthStart = performance.now()
+    for (let i = 0; i < iterations; i++) {
+      await constantTimeEqual('a', baseString)
+    }
+    const diffLengthTime = performance.now() - diffLengthStart
+
+    // Measure time for different-length comparison (long vs short)
+    const diffLengthStart2 = performance.now()
+    for (let i = 0; i < iterations; i++) {
+      await constantTimeEqual(baseString, 'a')
+    }
+    const diffLengthTime2 = performance.now() - diffLengthStart2
+
+    // The times should be within reasonable variance of each other
+    // We use a generous tolerance (5x) to account for system variance
+    // The key is that different-length comparisons don't return instantly
+    const avgDiffLengthTime = (diffLengthTime + diffLengthTime2) / 2
+    const ratio = Math.max(sameLengthTime, avgDiffLengthTime) /
+                  Math.min(sameLengthTime, avgDiffLengthTime)
+
+    // Ratio should be less than 5x - if early return existed, it would be much faster
+    expect(ratio).toBeLessThan(5)
+  })
+
+  it('correctly compares strings of vastly different lengths', async () => {
+    // Ensure correctness is maintained for different lengths
+    expect(await constantTimeEqual('short', 'a very long string that is much longer')).toBe(false)
+    expect(await constantTimeEqual('a very long string that is much longer', 'short')).toBe(false)
+    expect(await constantTimeEqual('x', 'x')).toBe(true)
+    expect(await constantTimeEqual('x', 'y')).toBe(false)
   })
 })

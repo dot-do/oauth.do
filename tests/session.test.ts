@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   encodeSession,
   decodeSession,
@@ -7,6 +7,9 @@ import {
   defaultSessionConfig,
 } from '../src/session'
 import type { SessionData } from '../src/session'
+
+// Helper to reset module state between tests
+const originalEnv = process.env.NODE_ENV
 
 describe('Session Encryption', () => {
   const testSecret = 'test-secret-key-for-testing'
@@ -58,11 +61,15 @@ describe('Session Encryption', () => {
       expect(decoded).toEqual(minimal)
     })
 
-    it('uses default secret when not provided', async () => {
+    it('uses generated dev secret when not provided in non-production', async () => {
+      // In non-production (test) mode, a random secret is generated and cached
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
       const encoded = await encodeSession(validSession)
       const decoded = await decodeSession(encoded)
 
       expect(decoded).toEqual(validSession)
+      warnSpy.mockRestore()
     })
 
     it('preserves custom extensible fields', async () => {
@@ -129,9 +136,37 @@ describe('Session Encryption', () => {
   })
 
   describe('getSessionConfig', () => {
-    it('returns defaults when no env provided', () => {
+    beforeEach(() => {
+      // Ensure we're not in production for these tests
+      process.env.NODE_ENV = 'test'
+    })
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalEnv
+    })
+
+    it('returns defaults with generated secret when no env provided in non-production', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const config = getSessionConfig()
-      expect(config).toEqual(defaultSessionConfig)
+
+      // Should have all default values except secret which is generated
+      expect(config.cookieName).toBe(defaultSessionConfig.cookieName)
+      expect(config.cookieMaxAge).toBe(defaultSessionConfig.cookieMaxAge)
+      expect(config.cookieSecure).toBe(defaultSessionConfig.cookieSecure)
+      expect(config.cookieSameSite).toBe(defaultSessionConfig.cookieSameSite)
+      // Secret should be a generated hex string (64 chars for 32 bytes)
+      expect(typeof config.secret).toBe('string')
+      expect(config.secret.length).toBeGreaterThan(0)
+
+      warnSpy.mockRestore()
+    })
+
+    it('throws error in production when SESSION_SECRET not provided', () => {
+      process.env.NODE_ENV = 'production'
+
+      expect(() => getSessionConfig()).toThrow(
+        'SESSION_SECRET environment variable is required in production'
+      )
     })
 
     it('reads SESSION_SECRET from env', () => {
@@ -140,37 +175,37 @@ describe('Session Encryption', () => {
     })
 
     it('reads SESSION_COOKIE_NAME from env', () => {
-      const config = getSessionConfig({ SESSION_COOKIE_NAME: 'my_session' })
+      const config = getSessionConfig({ SESSION_SECRET: 'test-secret', SESSION_COOKIE_NAME: 'my_session' })
       expect(config.cookieName).toBe('my_session')
     })
 
     it('reads SESSION_COOKIE_MAX_AGE from env', () => {
-      const config = getSessionConfig({ SESSION_COOKIE_MAX_AGE: '3600' })
+      const config = getSessionConfig({ SESSION_SECRET: 'test-secret', SESSION_COOKIE_MAX_AGE: '3600' })
       expect(config.cookieMaxAge).toBe(3600)
     })
 
     it('ignores invalid max age', () => {
-      const config = getSessionConfig({ SESSION_COOKIE_MAX_AGE: 'not-a-number' })
+      const config = getSessionConfig({ SESSION_SECRET: 'test-secret', SESSION_COOKIE_MAX_AGE: 'not-a-number' })
       expect(config.cookieMaxAge).toBe(defaultSessionConfig.cookieMaxAge)
     })
 
     it('ignores negative max age', () => {
-      const config = getSessionConfig({ SESSION_COOKIE_MAX_AGE: '-1' })
+      const config = getSessionConfig({ SESSION_SECRET: 'test-secret', SESSION_COOKIE_MAX_AGE: '-1' })
       expect(config.cookieMaxAge).toBe(defaultSessionConfig.cookieMaxAge)
     })
 
     it('reads SESSION_COOKIE_SECURE from env', () => {
-      const config = getSessionConfig({ SESSION_COOKIE_SECURE: 'false' })
+      const config = getSessionConfig({ SESSION_SECRET: 'test-secret', SESSION_COOKIE_SECURE: 'false' })
       expect(config.cookieSecure).toBe(false)
     })
 
     it('reads SESSION_COOKIE_SAME_SITE from env', () => {
-      expect(getSessionConfig({ SESSION_COOKIE_SAME_SITE: 'strict' }).cookieSameSite).toBe('strict')
-      expect(getSessionConfig({ SESSION_COOKIE_SAME_SITE: 'none' }).cookieSameSite).toBe('none')
+      expect(getSessionConfig({ SESSION_SECRET: 'test-secret', SESSION_COOKIE_SAME_SITE: 'strict' }).cookieSameSite).toBe('strict')
+      expect(getSessionConfig({ SESSION_SECRET: 'test-secret', SESSION_COOKIE_SAME_SITE: 'none' }).cookieSameSite).toBe('none')
     })
 
     it('ignores invalid same site values', () => {
-      const config = getSessionConfig({ SESSION_COOKIE_SAME_SITE: 'invalid' })
+      const config = getSessionConfig({ SESSION_SECRET: 'test-secret', SESSION_COOKIE_SAME_SITE: 'invalid' })
       expect(config.cookieSameSite).toBe('lax')
     })
   })

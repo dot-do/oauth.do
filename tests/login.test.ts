@@ -284,6 +284,118 @@ describe('Login Module', () => {
 			expect(getUser).toHaveBeenCalledWith(mockAccessToken)
 		})
 
+		it('should validate token before refreshing when no expiration info but refresh token exists', async () => {
+			// Token with refresh token but no expiration info - should validate first
+			const tokenData: StoredTokenData = {
+				accessToken: mockAccessToken,
+				refreshToken: mockRefreshToken,
+				// No expiresAt - unknown expiration
+			}
+
+			mockStorage.getTokenData.mockResolvedValue(tokenData)
+			mockStorage.getToken.mockResolvedValue(mockAccessToken)
+
+			// Token is still valid
+			vi.mocked(getUser).mockResolvedValue({
+				user: { id: 'user_123', email: 'test@example.com' },
+				token: mockAccessToken,
+			})
+
+			const result = await ensureLoggedIn({ storage: mockStorage })
+
+			expect(result).toEqual({
+				token: mockAccessToken,
+				isNewLogin: false,
+			})
+			// Should validate token first, not try to refresh
+			expect(getUser).toHaveBeenCalledWith(mockAccessToken)
+			expect(refreshAccessToken).not.toHaveBeenCalled()
+		})
+
+		it('should refresh token when no expiration info, has refresh token, and token validation fails', async () => {
+			// Token with refresh token but no expiration info, and token is invalid
+			const tokenData: StoredTokenData = {
+				accessToken: mockAccessToken,
+				refreshToken: mockRefreshToken,
+				// No expiresAt
+			}
+
+			mockStorage.getTokenData.mockResolvedValue(tokenData)
+			mockStorage.getToken.mockResolvedValue(mockAccessToken)
+
+			// Token validation fails
+			vi.mocked(getUser).mockResolvedValue({ user: null })
+
+			// But refresh succeeds
+			const mockRefreshResponse: TokenResponse = {
+				access_token: mockNewAccessToken,
+				refresh_token: 'new_refresh_token',
+				token_type: 'Bearer',
+				expires_in: 3600,
+			}
+			vi.mocked(refreshAccessToken).mockResolvedValue(mockRefreshResponse)
+
+			const result = await ensureLoggedIn({ storage: mockStorage })
+
+			expect(result).toEqual({
+				token: mockNewAccessToken,
+				isNewLogin: false,
+			})
+			expect(getUser).toHaveBeenCalledWith(mockAccessToken)
+			expect(refreshAccessToken).toHaveBeenCalledWith(mockRefreshToken)
+		})
+
+		it('should trigger login flow when no expiration info, refresh token exists, but both validation and refresh fail', async () => {
+			// This tests the scenario where token is invalid AND refresh fails
+			const tokenData: StoredTokenData = {
+				accessToken: mockAccessToken,
+				refreshToken: mockRefreshToken,
+				// No expiresAt
+			}
+
+			mockStorage.getTokenData.mockResolvedValue(tokenData)
+			mockStorage.getToken.mockResolvedValue(mockAccessToken)
+
+			// Token validation fails
+			vi.mocked(getUser).mockResolvedValue({ user: null })
+
+			// Refresh also fails
+			vi.mocked(refreshAccessToken).mockRejectedValue(new Error('Refresh token expired'))
+
+			const mockDeviceResponse: DeviceAuthorizationResponse = {
+				device_code: 'device_code_123',
+				user_code: 'ABCD-1234',
+				verification_uri: 'https://login.oauth.do/activate',
+				verification_uri_complete: 'https://login.oauth.do/activate?user_code=ABCD-1234',
+				expires_in: 600,
+				interval: 5,
+			}
+
+			const mockTokenResponse: TokenResponse = {
+				access_token: mockNewAccessToken,
+				token_type: 'Bearer',
+				expires_in: 3600,
+			}
+
+			vi.mocked(authorizeDevice).mockResolvedValue(mockDeviceResponse)
+			vi.mocked(pollForTokens).mockResolvedValue(mockTokenResponse)
+
+			const result = await ensureLoggedIn({
+				storage: mockStorage,
+				openBrowser: false,
+				print: vi.fn(),
+			})
+
+			expect(result).toEqual({
+				token: mockNewAccessToken,
+				isNewLogin: true,
+			})
+			// Both validation and refresh were attempted before falling back to device flow
+			expect(getUser).toHaveBeenCalledWith(mockAccessToken)
+			expect(refreshAccessToken).toHaveBeenCalledWith(mockRefreshToken)
+			expect(authorizeDevice).toHaveBeenCalled()
+		})
+
 		it('should use setToken if setTokenData is not available', async () => {
 			const storageWithoutTokenData = {
 				getToken: vi.fn().mockResolvedValue(null),

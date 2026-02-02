@@ -30,13 +30,34 @@ interface Env {
   OAUTH?: Fetcher
 }
 
+/**
+ * Authenticated user from JWT or API key
+ *
+ * This is compatible with the canonical AuthUser in oauth.do/src/types.ts.
+ * All fields are optional except id for maximum compatibility.
+ */
 interface AuthUser {
+  /** Unique user identifier */
   id: string
+  /** User's email address */
   email?: string
+  /** User's display name */
   name?: string
+  /** User's profile image URL */
+  image?: string
+  /** Organization/tenant ID (canonical name) */
   organizationId?: string
+  /**
+   * Organization/tenant ID (alias for backwards compatibility)
+   * @deprecated Use organizationId instead
+   */
+  org?: string
+  /** User roles for RBAC */
   roles?: string[]
+  /** User permissions for fine-grained access */
   permissions?: string[]
+  /** Additional user metadata */
+  metadata?: Record<string, unknown>
 }
 
 interface VerifyResult {
@@ -162,11 +183,14 @@ async function verifyJWT(token: string, env: Env): Promise<VerifyResult> {
     const oauthJwks = await getOAuthJwks()
     const { payload } = await jose.jwtVerify(token, oauthJwks)
 
+    const orgId = payload.org_id as string | undefined
     const user: AuthUser = {
       id: payload.sub || '',
       email: payload.email as string | undefined,
       name: payload.name as string | undefined,
-      organizationId: payload.org_id as string | undefined,
+      image: payload.picture as string | undefined,
+      organizationId: orgId,
+      org: orgId, // Backwards compatibility alias
       roles: extractRoles(payload),
       permissions: payload.permissions as string[] | undefined,
     }
@@ -183,11 +207,14 @@ async function verifyJWT(token: string, env: Env): Promise<VerifyResult> {
     const workosJwks = await getWorkosJwks(env.WORKOS_CLIENT_ID)
     const { payload } = await jose.jwtVerify(token, workosJwks)
 
+    const workosOrgId = payload.org_id as string | undefined
     const user: AuthUser = {
       id: payload.sub || '',
       email: payload.email as string | undefined,
       name: payload.name as string | undefined,
-      organizationId: payload.org_id as string | undefined,
+      image: payload.picture as string | undefined,
+      organizationId: workosOrgId,
+      org: workosOrgId, // Backwards compatibility alias
       roles: extractRoles(payload),
       permissions: payload.permissions as string[] | undefined,
     }
@@ -199,23 +226,47 @@ async function verifyJWT(token: string, env: Env): Promise<VerifyResult> {
   }
 }
 
+/**
+ * Constant-time string comparison to prevent timing attacks.
+ * Uses crypto.subtle.timingSafeEqual if available (Cloudflare Workers),
+ * otherwise falls back to a manual constant-time implementation.
+ */
+function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  // Use native timingSafeEqual if available (Cloudflare Workers non-standard extension)
+  // @ts-expect-error - timingSafeEqual is not in standard WebCrypto types
+  if (typeof crypto?.subtle?.timingSafeEqual === 'function') {
+    // @ts-expect-error - timingSafeEqual is not in standard WebCrypto types
+    return crypto.subtle.timingSafeEqual(a, b)
+  }
+
+  // Fallback: manual constant-time comparison
+  // This should only be used in test environments
+  if (a.length !== b.length) return false
+  let result = 0
+  for (let i = 0; i < a.length; i++) {
+    result |= a[i] ^ b[i]
+  }
+  return result === 0
+}
+
 async function verifyAdminToken(token: string, env: Env): Promise<VerifyResult> {
   if (!env.ADMIN_TOKEN) return { valid: false, error: 'Admin token not configured' }
 
-  // Constant-time comparison
+  // Constant-time comparison to prevent timing attacks
   const tokenBytes = new TextEncoder().encode(token)
   const adminBytes = new TextEncoder().encode(env.ADMIN_TOKEN)
 
-  if (tokenBytes.length !== adminBytes.length) {
-    return { valid: false, error: 'Invalid admin token' }
-  }
+  // To avoid leaking length information, we compare against itself when lengths differ
+  // This ensures the comparison takes the same time regardless of length mismatch
+  const lengthsMatch = tokenBytes.length === adminBytes.length
+  const compareBytes = lengthsMatch ? adminBytes : tokenBytes
 
-  let result = 0
-  for (let i = 0; i < tokenBytes.length; i++) {
-    result |= tokenBytes[i] ^ adminBytes[i]
-  }
+  // timingSafeEqual requires equal-length buffers, so we compare:
+  // - tokenBytes vs adminBytes when lengths match (actual comparison)
+  // - tokenBytes vs tokenBytes when lengths differ (always true, but we'll return false)
+  const isEqual = timingSafeEqual(tokenBytes, compareBytes)
 
-  if (result === 0) {
+  if (lengthsMatch && isEqual) {
     return {
       valid: true,
       user: {
@@ -287,16 +338,21 @@ async function verifyToken(token: string, env: Env): Promise<VerifyResult> {
 
   let result: VerifyResult
 
-  // Try different verification methods
-  if (token === env.ADMIN_TOKEN) {
-    result = await verifyAdminToken(token, env)
-  } else if (token.startsWith('sk_')) {
+  // Try different verification methods based on token format
+  if (token.startsWith('sk_')) {
+    // API keys always start with sk_
     result = await verifyApiKey(token, env)
-  } else {
-    // Assume JWT
+  } else if (token.includes('.')) {
+    // JWTs contain dots (header.payload.signature)
     result = await verifyJWT(token, env)
+  } else if (env.ADMIN_TOKEN) {
+    // For other tokens, try admin token verification if configured
+    // This uses timing-safe comparison internally
+    result = await verifyAdminToken(token, env)
+  } else {
+    // No admin token configured and not a recognized format
+    result = { valid: false, error: 'Invalid token format' }
   }
-
 
   // Cache results (valid tokens: 5 min, invalid tokens: 60 sec)
   await cacheResult(token, result)

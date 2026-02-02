@@ -203,7 +203,8 @@ export async function verifyJwtWithFetcher(
         id: workosPayload.sub,
         email: workosPayload.email,
         name,
-        org: workosPayload.org_id,
+        organizationId: workosPayload.org_id,
+        org: workosPayload.org_id, // Backwards compatibility alias
         roles: workosPayload.roles || (workosPayload.role ? [workosPayload.role] : undefined),
         permissions: workosPayload.permissions,
       }
@@ -216,7 +217,8 @@ export async function verifyJwtWithFetcher(
         email: oauthPayload.email,
         name: oauthPayload.name,
         image: oauthPayload.picture || oauthPayload.image,
-        org: oauthPayload.org,
+        organizationId: oauthPayload.org,
+        org: oauthPayload.org, // Backwards compatibility alias
         roles: oauthPayload.roles,
         permissions: oauthPayload.permissions || scope,
       }
@@ -270,7 +272,8 @@ export async function verifyApiKey(
     const user: AuthUser = {
       id: data.user_id,
       email: data.email,
-      org: data.organization_id,
+      organizationId: data.organization_id,
+      org: data.organization_id, // Backwards compatibility alias
       permissions: data.permissions,
     }
 

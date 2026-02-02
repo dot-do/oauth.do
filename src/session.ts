@@ -50,14 +50,54 @@ export interface SessionConfig {
 }
 
 /**
- * Default session configuration
+ * Generate a random development secret.
+ * This is used only in non-production environments when SESSION_SECRET is not set.
  */
-export const defaultSessionConfig: SessionConfig = {
+function generateDevSecret(): string {
+  const array = new Uint8Array(32)
+  crypto.getRandomValues(array)
+  return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+// Cache the dev secret so it remains consistent during a single process lifetime
+let cachedDevSecret: string | null = null
+
+/**
+ * Get the session secret with proper environment checks.
+ * - In production (NODE_ENV === 'production'), SESSION_SECRET is required
+ * - In development, a random secret is generated if not provided (with a warning)
+ */
+function getSecretWithValidation(envSecret?: string): string {
+  if (envSecret) {
+    return envSecret
+  }
+
+  const isProduction = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production'
+
+  if (isProduction) {
+    throw new Error('SESSION_SECRET environment variable is required in production')
+  }
+
+  // In development, generate and cache a random secret
+  if (!cachedDevSecret) {
+    cachedDevSecret = generateDevSecret()
+    console.warn(
+      '[oauth.do/session] WARNING: No SESSION_SECRET provided. Using a randomly generated secret for this session. ' +
+      'Sessions will not persist across server restarts. Set SESSION_SECRET environment variable to fix this.'
+    )
+  }
+
+  return cachedDevSecret
+}
+
+/**
+ * Default session configuration (without secret - must be provided or generated)
+ */
+export const defaultSessionConfig: Omit<SessionConfig, 'secret'> & { secret?: string } = {
   cookieName: 'session',
   cookieMaxAge: 60 * 60 * 24 * 7, // 7 days
   cookieSecure: true,
   cookieSameSite: 'lax',
-  secret: 'oauth-do-dev-secret-change-in-production',
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -91,7 +131,7 @@ async function getEncryptionKey(secret: string): Promise<CryptoKey> {
  * @returns Base64-encoded encrypted session string
  */
 export async function encodeSession(session: SessionData, secret?: string): Promise<string> {
-  const key = await getEncryptionKey(secret ?? defaultSessionConfig.secret)
+  const key = await getEncryptionKey(secret ?? getSecretWithValidation(defaultSessionConfig.secret))
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH))
   const encoder = new TextEncoder()
   const data = encoder.encode(JSON.stringify(session))
@@ -120,7 +160,7 @@ export async function encodeSession(session: SessionData, secret?: string): Prom
  */
 export async function decodeSession(encoded: string, secret?: string): Promise<SessionData | null> {
   try {
-    const key = await getEncryptionKey(secret ?? defaultSessionConfig.secret)
+    const key = await getEncryptionKey(secret ?? getSecretWithValidation(defaultSessionConfig.secret))
     const combined = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0))
 
     const iv = combined.slice(0, IV_LENGTH)
@@ -213,7 +253,7 @@ export function getSessionConfig(env?: Record<string, string | undefined>): Sess
   }
 
   return {
-    secret: env?.SESSION_SECRET ?? defaultSessionConfig.secret,
+    secret: getSecretWithValidation(env?.SESSION_SECRET),
     cookieName: env?.SESSION_COOKIE_NAME ?? defaultSessionConfig.cookieName,
     cookieMaxAge,
     cookieSecure: env?.SESSION_COOKIE_SECURE !== 'false',
