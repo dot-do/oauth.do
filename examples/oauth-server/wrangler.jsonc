@@ -1,0 +1,16 @@
+{
+  "name": "oauth-server-example",
+  "main": "index.ts",
+  "compatibility_date": "2025-01-01",
+  "dev": {
+    "port": 8787
+  },
+  // In production, set these via `wrangler secret put <NAME>`
+  // For local dev, create a .dev.vars file with these values.
+  "vars": {
+    // Your issuer URL — must match the domain you deploy to
+    "ISSUER": "http://localhost:8787",
+    // Set to "true" to enable dev mode (no upstream provider needed)
+    "DEV_MODE": "true"
+  }
+}

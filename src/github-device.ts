@@ -4,6 +4,15 @@
  * https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow
  */
 
+import {
+	isGitHubDeviceAuthWireResponse,
+	isGitHubTokenWireSuccess,
+	isGitHubTokenWireError,
+	isGitHubUserWireResponse,
+	toGitHubTokenError,
+	ValidationError,
+} from './guards.js'
+
 export interface GitHubDeviceFlowOptions {
 	/** GitHub OAuth App client ID */
 	clientId: string
@@ -104,12 +113,9 @@ export async function startGitHubDeviceFlow(
 			throw new Error(`GitHub device authorization failed: ${response.statusText} - ${errorText}`)
 		}
 
-		const data = await response.json() as {
-			device_code: string
-			user_code: string
-			verification_uri: string
-			expires_in: number
-			interval: number
+		const data = await response.json()
+		if (!isGitHubDeviceAuthWireResponse(data)) {
+			throw new ValidationError('GitHubDeviceAuthResponse', 'invalid response from GitHub device authorization endpoint', data)
 		}
 
 		return {
@@ -188,12 +194,10 @@ export async function pollGitHubDeviceFlow(
 				body,
 			})
 
-			const data = await response.json() as
-				| { access_token: string; token_type: string; scope: string }
-				| { error: string; error_description?: string; error_uri?: string }
+			const data = await response.json()
 
 			// Check for success
-			if ('access_token' in data) {
+			if (isGitHubTokenWireSuccess(data)) {
 				return {
 					accessToken: data.access_token,
 					tokenType: data.token_type,
@@ -202,7 +206,8 @@ export async function pollGitHubDeviceFlow(
 			}
 
 			// Handle error responses
-			const error = (data.error || 'unknown') as GitHubTokenError
+			const errorStr = isGitHubTokenWireError(data) ? data.error : undefined
+			const error = toGitHubTokenError(errorStr)
 
 			switch (error) {
 				case 'authorization_pending':
@@ -274,12 +279,9 @@ export async function getGitHubUser(
 			throw new Error(`GitHub user fetch failed: ${response.statusText} - ${errorText}`)
 		}
 
-		const data = await response.json() as {
-			id: number
-			login: string
-			email: string | null
-			name: string | null
-			avatar_url: string
+		const data = await response.json()
+		if (!isGitHubUserWireResponse(data)) {
+			throw new ValidationError('GitHubUserResponse', 'invalid response from GitHub user API', data)
 		}
 
 		return {

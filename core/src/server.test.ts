@@ -18,7 +18,8 @@ describe('OAuth 2.1 Server E2E Flow', () => {
         allowAnyCredentials: true
       },
       enableDynamicRegistration: true,
-      scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write']
+      scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
+      skipConsent: true, // These tests focus on core OAuth flows; consent is tested in consent.test.ts
     })
   })
 

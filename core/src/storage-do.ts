@@ -15,7 +15,9 @@ import type {
   OAuthRefreshToken,
   OAuthGrant,
   OAuthDeviceCode,
+  OAuthConsent,
 } from './types.js'
+import { isStringArray } from './guards.js'
 
 /**
  * Cloudflare Durable Object SqlStorage interface
@@ -177,6 +179,18 @@ export class DOSQLiteStorage implements OAuthStorage {
       )
     `)
 
+    // Consents table
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS consents (
+        user_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        scopes TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, client_id)
+      )
+    `)
+
     // Signing keys table (for JWT signing)
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS signing_keys (
@@ -202,6 +216,7 @@ export class DOSQLiteStorage implements OAuthStorage {
     this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_grants_user ON grants(user_id)`)
     this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_user_code ON device_codes(user_code)`)
     this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_expires ON device_codes(expires_at)`)
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_consents_user ON consents(user_id)`)
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -292,7 +307,8 @@ export class DOSQLiteStorage implements OAuthStorage {
     // Search for domain in the JSON array
     const rows = this.sql.exec<OrgRow>('SELECT * FROM organizations WHERE domains IS NOT NULL').toArray()
     for (const row of rows) {
-      const domains = row.domains ? JSON.parse(row.domains) as string[] : []
+      const parsed = row.domains ? JSON.parse(row.domains) : null
+      const domains = isStringArray(parsed) ? parsed : []
       if (domains.some((d) => d.toLowerCase() === domain.toLowerCase())) {
         return this.rowToOrganization(row)
       }
@@ -511,6 +527,44 @@ export class DOSQLiteStorage implements OAuthStorage {
       userId
     ).toArray()
     return rows.map((row) => this.rowToGrant(row))
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Consent Operations
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async getConsent(userId: string, clientId: string): Promise<OAuthConsent | null> {
+    const row = this.sql.exec<ConsentRow>(
+      'SELECT * FROM consents WHERE user_id = ? AND client_id = ?',
+      userId,
+      clientId
+    ).toArray()[0] ?? null
+    return row ? this.rowToConsent(row) : null
+  }
+
+  async saveConsent(consent: OAuthConsent): Promise<void> {
+    this.sql.exec(
+      `INSERT OR REPLACE INTO consents
+       (user_id, client_id, scopes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      consent.userId,
+      consent.clientId,
+      JSON.stringify(consent.scopes),
+      consent.createdAt,
+      consent.updatedAt
+    )
+  }
+
+  async revokeConsent(userId: string, clientId: string): Promise<void> {
+    this.sql.exec('DELETE FROM consents WHERE user_id = ? AND client_id = ?', userId, clientId)
+  }
+
+  async listUserConsents(userId: string): Promise<OAuthConsent[]> {
+    const rows = this.sql.exec<ConsentRow>(
+      'SELECT * FROM consents WHERE user_id = ?',
+      userId
+    ).toArray()
+    return rows.map((row) => this.rowToConsent(row))
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -736,6 +790,16 @@ export class DOSQLiteStorage implements OAuthStorage {
     }
   }
 
+  private rowToConsent(row: ConsentRow): OAuthConsent {
+    return {
+      userId: row.user_id,
+      clientId: row.client_id,
+      scopes: JSON.parse(row.scopes),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }
+  }
+
   private rowToDeviceCode(row: DeviceCodeRow): OAuthDeviceCode {
     return {
       deviceCode: row.device_code,
@@ -841,6 +905,14 @@ interface GrantRow {
   created_at: number
   last_used_at: number | null
   revoked: number
+}
+
+interface ConsentRow {
+  user_id: string
+  client_id: string
+  scopes: string
+  created_at: number
+  updated_at: number
 }
 
 interface DeviceCodeRow {

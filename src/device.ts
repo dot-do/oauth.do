@@ -1,4 +1,5 @@
 import { getConfig } from './config.js'
+import { isDeviceAuthorizationResponse, isTokenResponse, isErrorResponse, toTokenError, ValidationError } from './guards.js'
 import type { DeviceAuthorizationResponse, TokenResponse, TokenError } from './types.js'
 
 /**
@@ -51,7 +52,10 @@ export async function authorizeDevice(options: DeviceAuthOptions = {}): Promise<
 			throw new Error(`Device authorization failed: ${response.statusText} - ${errorText}`)
 		}
 
-		const data = (await response.json()) as DeviceAuthorizationResponse
+		const data = await response.json()
+		if (!isDeviceAuthorizationResponse(data)) {
+			throw new ValidationError('DeviceAuthorizationResponse', 'invalid response from device authorization endpoint', data)
+		}
 		return data
 	} catch (error) {
 		console.error('Device authorization error:', error)
@@ -105,13 +109,17 @@ export async function pollForTokens(
 			})
 
 			if (response.ok) {
-				const data = (await response.json()) as TokenResponse
+				const data = await response.json()
+				if (!isTokenResponse(data)) {
+					throw new ValidationError('TokenResponse', 'invalid response from token polling endpoint', data)
+				}
 				return data
 			}
 
 			// Handle error responses
-			const errorData = (await response.json().catch(() => ({ error: 'unknown' }))) as { error?: string }
-			const error = (errorData.error || 'unknown') as TokenError
+			const errorData = await response.json().catch(() => ({ error: 'unknown' }))
+			const errorStr = isErrorResponse(errorData) ? errorData.error : undefined
+			const error = toTokenError(errorStr)
 
 			switch (error) {
 				case 'authorization_pending':

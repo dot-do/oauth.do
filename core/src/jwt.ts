@@ -7,6 +7,7 @@
  */
 
 import { base64UrlDecode } from './pkce.js'
+import { isJWTHeader, isJWTPayload } from './guards.js'
 
 /**
  * Result of JWT verification - discriminated union based on validity
@@ -256,10 +257,13 @@ export function decodeJWT(token: string): { header: JWTHeader; payload: JWTPaylo
       return null
     }
 
-    const header = JSON.parse(decodeBase64Url(parts[0]!)) as JWTHeader
-    const payload = JSON.parse(decodeBase64Url(parts[1]!)) as JWTPayload
+    const headerData = JSON.parse(decodeBase64Url(parts[0]!))
+    const payloadData = JSON.parse(decodeBase64Url(parts[1]!))
+    if (!isJWTHeader(headerData) || !isJWTPayload(payloadData)) {
+      return null
+    }
 
-    return { header, payload }
+    return { header: headerData, payload: payloadData }
   } catch {
     return null
   }

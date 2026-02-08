@@ -9,7 +9,7 @@ import type { Context } from 'hono'
 import type { OAuthStorage } from './storage.js'
 import type { OAuthUser, UpstreamOAuthConfig } from './types.js'
 import type { DevModeConfig, TestHelpers } from './dev.js'
-import type { SigningKeyManager } from './jwt-signing.js'
+import { SigningKeyManager, signAccessToken } from './jwt-signing.js'
 
 /**
  * Shared context available to all route modules.
@@ -49,6 +49,10 @@ export interface ServerContext {
   requireRegistrationAuth: boolean
   /** Admin token for registration */
   adminToken?: string
+  /** Trusted (first-party) client IDs that skip consent */
+  trustedClientIds: string[]
+  /** Skip consent screen for all clients */
+  skipConsent: boolean
   /** Test helpers (only in dev mode) */
   testHelpers?: TestHelpers
   /** Get effective issuer for a request */
@@ -159,8 +163,7 @@ export function createEnsureSigningKey(
     let signingKeyManager = getSigningKeyManager()
     if (!signingKeyManager) {
       // Create an in-memory key manager lazily
-      const { SigningKeyManager: SKM } = await import('./jwt-signing.js')
-      signingKeyManager = new SKM()
+      signingKeyManager = new SigningKeyManager()
       setSigningKeyManager(signingKeyManager)
     }
     return signingKeyManager.getCurrentKey()
@@ -184,7 +187,6 @@ export function createGenerateAccessToken(
   }>
 ): (user: OAuthUser, clientId: string, scope: string, issuerOverride?: string) => Promise<string> {
   return async (user: OAuthUser, clientId: string, scope: string, issuerOverride?: string): Promise<string> => {
-    const { signAccessToken } = await import('./jwt-signing.js')
     const key = await ensureSigningKey()
     return signAccessToken(
       key,

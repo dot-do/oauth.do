@@ -7,16 +7,18 @@
  * - POST /login - Dev mode login form submission
  * - GET /api/callback - Upstream OAuth callback
  * - POST /exchange - Platform token exchange
+ * - POST /consent - Consent form submission (allow/deny)
  */
 
 import type { Context } from 'hono'
 import type { OAuthStorage } from '../storage.js'
-import type { OAuthError, OAuthUser, UpstreamOAuthConfig } from '../types.js'
+import type { OAuthError, OAuthUser, OAuthAuthorizationCode, UpstreamOAuthConfig } from '../types.js'
 import type { DevModeConfig, TestHelpers } from '../dev.js'
 import { generateLoginFormHtml } from '../dev.js'
 import { generateAuthorizationCode, generateState, generateToken } from '../pkce.js'
 import { redirectWithError } from '../utils/html.js'
 import { buildUpstreamAuthUrl, exchangeUpstreamCode, getOrCreateUser } from '../utils/upstream.js'
+import { generateConsentScreenHtml, consentCoversScopes } from '../consent.js'
 
 /**
  * Configuration for authorization handlers
@@ -54,6 +56,97 @@ export interface AuthorizeHandlerConfig {
   validateScopes: (requestedScope: string | undefined) => string | undefined
   /** Function to generate JWT access token */
   generateAccessToken: (user: OAuthUser, clientId: string, scope: string, issuerOverride?: string) => Promise<string>
+  /** Trusted (first-party) client IDs that skip consent */
+  trustedClientIds: string[]
+  /** Skip consent screen for all clients */
+  skipConsent: boolean
+}
+
+/**
+ * Check if a client is trusted (first-party) and should skip the consent screen.
+ * The 'first-party' client ID (used by /login) is always trusted.
+ */
+function isFirstPartyClient(clientId: string, trustedClientIds: string[]): boolean {
+  return clientId === 'first-party' || trustedClientIds.includes(clientId)
+}
+
+/**
+ * Check if consent is required for a user+client+scopes combination.
+ * Returns true if the consent screen should be shown.
+ */
+async function needsConsent(
+  storage: OAuthStorage,
+  userId: string,
+  clientId: string,
+  requestedScopes: string[],
+  trustedClientIds: string[],
+  skipConsent: boolean,
+  debug: boolean
+): Promise<boolean> {
+  // Skip consent entirely if configured
+  if (skipConsent) return false
+
+  // First-party clients never need consent
+  if (isFirstPartyClient(clientId, trustedClientIds)) {
+    if (debug) {
+      console.log('[OAuth] Skipping consent for first-party client:', clientId)
+    }
+    return false
+  }
+
+  // Check if user has already consented to these scopes for this client
+  const existingConsent = await storage.getConsent(userId, clientId)
+  if (existingConsent && consentCoversScopes(existingConsent, requestedScopes)) {
+    if (debug) {
+      console.log('[OAuth] Existing consent covers requested scopes for client:', clientId)
+    }
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Show the consent screen by storing a pending consent auth code and returning HTML.
+ */
+async function showConsentScreen(
+  c: Context,
+  storage: OAuthStorage,
+  pendingAuth: OAuthAuthorizationCode,
+  userId: string,
+  clientName: string,
+  issuer: string,
+  authCodeTtl: number,
+  debug: boolean
+): Promise<Response> {
+  // Generate a consent token
+  const consentToken = generateToken(48)
+
+  // Store the pending auth state under a consent: prefix
+  await storage.saveAuthorizationCode({
+    ...pendingAuth,
+    code: `consent:${consentToken}`,
+    userId,
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + authCodeTtl * 1000,
+  })
+
+  const requestedScopes = pendingAuth.scope ? pendingAuth.scope.split(/\s+/).filter(Boolean) : []
+
+  if (debug) {
+    console.log('[OAuth] Showing consent screen for client:', pendingAuth.clientId, 'scopes:', requestedScopes)
+  }
+
+  const html = generateConsentScreenHtml({
+    issuer,
+    clientName,
+    clientId: pendingAuth.clientId,
+    redirectUri: pendingAuth.redirectUri,
+    scopes: requestedScopes,
+    consentToken,
+  })
+
+  return c.html(html)
 }
 
 /**
@@ -314,7 +407,7 @@ export function createLoginGetHandler(config: AuthorizeHandlerConfig) {
  * Create the login POST handler (POST /login) - Dev mode login form submission
  */
 export function createLoginPostHandler(config: AuthorizeHandlerConfig) {
-  const { storage, devMode, authCodeTtl, debug, onUserAuthenticated, testHelpers, getEffectiveIssuer, validateScopes } = config
+  const { storage, devMode, authCodeTtl, debug, onUserAuthenticated, testHelpers, getEffectiveIssuer, validateScopes, trustedClientIds, skipConsent } = config
 
   return async (c: Context): Promise<Response> => {
     if (!devMode?.enabled) {
@@ -384,6 +477,31 @@ export function createLoginPostHandler(config: AuthorizeHandlerConfig) {
     // Validate and filter scopes
     const grantedScope = validateScopes(scope)
 
+    const requestedScopes = grantedScope ? grantedScope.split(/\s+/).filter(Boolean) : []
+
+    // Check if consent is needed for this client+user+scopes
+    if (await needsConsent(storage, user.id, clientId, requestedScopes, trustedClientIds, skipConsent, debug)) {
+      // Fetch client name for the consent screen
+      const client = await storage.getClient(clientId)
+      const clientName = client?.clientName || clientId
+
+      // Build a pending auth code object to store under consent: prefix
+      const pendingAuth: OAuthAuthorizationCode = {
+        code: '', // Will be set by showConsentScreen
+        clientId,
+        userId: user.id,
+        redirectUri,
+        ...(grantedScope && { scope: grantedScope }),
+        codeChallenge,
+        codeChallengeMethod: 'S256',
+        ...(state && { state }),
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + authCodeTtl * 1000,
+      }
+
+      return showConsentScreen(c, storage, pendingAuth, user.id, clientName, effectiveIssuer, authCodeTtl, debug)
+    }
+
     // Generate authorization code
     const authCode = generateAuthorizationCode()
 
@@ -419,7 +537,8 @@ export function createLoginPostHandler(config: AuthorizeHandlerConfig) {
  * Create the callback handler (GET /api/callback) - Upstream OAuth callback
  */
 export function createCallbackHandler(config: AuthorizeHandlerConfig) {
-  const { storage, upstream, defaultIssuer, authCodeTtl, refreshTokenTtl, debug, onUserAuthenticated, generateAccessToken } = config
+  const { storage, upstream, defaultIssuer, authCodeTtl, refreshTokenTtl, debug, onUserAuthenticated, generateAccessToken, trustedClientIds, skipConsent } =
+    config
 
   return async (c: Context): Promise<Response> => {
     const code = c.req.query('code')
@@ -444,7 +563,7 @@ export function createCallbackHandler(config: AuthorizeHandlerConfig) {
     const loginAuth = await storage.consumeAuthorizationCode(`login:${upstreamState}`)
 
     if (loginAuth) {
-      // Simple login flow - use one-time code exchange (not JWT in URL)
+      // Simple login flow - first-party, no consent needed
       if (error) {
         const redirectUrl = new URL(loginAuth.redirectUri)
         redirectUrl.searchParams.set('error', error)
@@ -555,6 +674,18 @@ export function createCallbackHandler(config: AuthorizeHandlerConfig) {
       // Get or create user
       const user = await getOrCreateUser(storage, upstreamTokens.user, onUserAuthenticated)
 
+      const requestedScopes = pendingAuth.scope ? pendingAuth.scope.split(/\s+/).filter(Boolean) : []
+
+      // Check if consent is needed
+      if (await needsConsent(storage, user.id, pendingAuth.clientId, requestedScopes, trustedClientIds, skipConsent, debug)) {
+        const client = await storage.getClient(pendingAuth.clientId)
+        const clientName = client?.clientName || pendingAuth.clientId
+
+        const effectiveIssuer = pendingAuth.effectiveIssuer || defaultIssuer
+
+        return showConsentScreen(c, storage, pendingAuth, user.id, clientName, effectiveIssuer, authCodeTtl, debug)
+      }
+
       // Generate our own authorization code
       const authCode = generateAuthorizationCode()
 
@@ -594,6 +725,87 @@ export function createCallbackHandler(config: AuthorizeHandlerConfig) {
 }
 
 /**
+ * Create the consent POST handler (POST /consent) - User approves or denies access
+ */
+export function createConsentPostHandler(config: AuthorizeHandlerConfig) {
+  const { storage, authCodeTtl, debug } = config
+
+  return async (c: Context): Promise<Response> => {
+    const formData = await c.req.parseBody()
+    const consentToken = String(formData['consent_token'] || '')
+    const action = String(formData['action'] || '')
+
+    if (!consentToken) {
+      return c.json({ error: 'invalid_request', error_description: 'consent_token is required' } as OAuthError, 400)
+    }
+
+    if (action !== 'allow' && action !== 'deny') {
+      return c.json({ error: 'invalid_request', error_description: 'action must be allow or deny' } as OAuthError, 400)
+    }
+
+    // Consume the consent pending auth code
+    const pendingAuth = await storage.consumeAuthorizationCode(`consent:${consentToken}`)
+    if (!pendingAuth) {
+      return c.json({ error: 'invalid_request', error_description: 'Invalid or expired consent token' } as OAuthError, 400)
+    }
+
+    if (debug) {
+      console.log('[OAuth] Consent response:', { action, clientId: pendingAuth.clientId, userId: pendingAuth.userId })
+    }
+
+    // Handle deny
+    if (action === 'deny') {
+      return redirectWithError(pendingAuth.redirectUri, 'access_denied', 'The user denied the authorization request', pendingAuth.state)
+    }
+
+    // Handle allow - store consent
+    const requestedScopes = pendingAuth.scope ? pendingAuth.scope.split(/\s+/).filter(Boolean) : []
+
+    // Check if there is existing consent to merge with
+    const existingConsent = await storage.getConsent(pendingAuth.userId, pendingAuth.clientId)
+    const mergedScopes = existingConsent ? Array.from(new Set([...existingConsent.scopes, ...requestedScopes])) : requestedScopes
+
+    const now = Date.now()
+    await storage.saveConsent({
+      userId: pendingAuth.userId,
+      clientId: pendingAuth.clientId,
+      scopes: mergedScopes,
+      createdAt: existingConsent?.createdAt ?? now,
+      updatedAt: now,
+    })
+
+    // Generate authorization code and redirect
+    const authCode = generateAuthorizationCode()
+
+    await storage.saveAuthorizationCode({
+      code: authCode,
+      clientId: pendingAuth.clientId,
+      userId: pendingAuth.userId,
+      redirectUri: pendingAuth.redirectUri,
+      ...(pendingAuth.scope !== undefined && { scope: pendingAuth.scope }),
+      ...(pendingAuth.codeChallenge !== undefined && { codeChallenge: pendingAuth.codeChallenge }),
+      codeChallengeMethod: 'S256',
+      ...(pendingAuth.state !== undefined && { state: pendingAuth.state }),
+      ...(pendingAuth.effectiveIssuer !== undefined && { effectiveIssuer: pendingAuth.effectiveIssuer }),
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + authCodeTtl * 1000,
+    })
+
+    const redirectUrl = new URL(pendingAuth.redirectUri)
+    redirectUrl.searchParams.set('code', authCode)
+    if (pendingAuth.state) {
+      redirectUrl.searchParams.set('state', pendingAuth.state)
+    }
+
+    if (debug) {
+      console.log('[OAuth] Consent granted, redirecting to client:', redirectUrl.toString())
+    }
+
+    return c.redirect(redirectUrl.toString())
+  }
+}
+
+/**
  * Create the exchange handler (POST /exchange) - Platform token exchange
  */
 export function createExchangeHandler(config: AuthorizeHandlerConfig) {
@@ -625,16 +837,17 @@ export function createExchangeHandler(config: AuthorizeHandlerConfig) {
       return c.json({ error: 'invalid_request', error_description: 'Invalid JSON body' } as OAuthError, 400)
     }
 
-    const code = (typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>).code === 'string')
-      ? (body as { code: string }).code
-      : undefined
+    const exchangeCode =
+      typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>).code === 'string'
+        ? (body as { code: string }).code
+        : undefined
 
-    if (!code) {
+    if (!exchangeCode) {
       return c.json({ error: 'invalid_request', error_description: 'code is required' } as OAuthError, 400)
     }
 
     // Look up the one-time code
-    const exchangeData = await storage.consumeAuthorizationCode(`exchange:${code}`)
+    const exchangeData = await storage.consumeAuthorizationCode(`exchange:${exchangeCode}`)
     if (!exchangeData) {
       return c.json({ error: 'invalid_grant', error_description: 'Invalid or expired code' } as OAuthError, 400)
     }

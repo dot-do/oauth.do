@@ -20,6 +20,7 @@ import type {
   OAuthGrant,
   OAuthOrganization,
   OAuthDeviceCode,
+  OAuthConsent,
 } from './types.js'
 
 /**
@@ -34,6 +35,7 @@ type RefreshTokenDoc = Omit<OAuthRefreshToken, 'token'> & { token: string } & Re
 type GrantDoc = Omit<OAuthGrant, 'id'> & { id: string } & Record<string, unknown>
 type OrganizationDoc = Omit<OAuthOrganization, 'id'> & { id: string } & Record<string, unknown>
 type DeviceCodeDoc = Omit<OAuthDeviceCode, 'deviceCode'> & { deviceCode: string } & Record<string, unknown>
+type ConsentDoc = OAuthConsent & Record<string, unknown>
 
 /**
  * Collections-based OAuth storage implementation
@@ -69,6 +71,7 @@ export class CollectionsOAuthStorage implements OAuthStorage {
   private grants: SyncCollection<GrantDoc>
   private organizations: SyncCollection<OrganizationDoc>
   private deviceCodes: SyncCollection<DeviceCodeDoc>
+  private consents: SyncCollection<ConsentDoc>
 
   constructor(sql: SqlStorage) {
     // Initialize collections schema (single table for all collections)
@@ -83,6 +86,7 @@ export class CollectionsOAuthStorage implements OAuthStorage {
     this.grants = createCollection<GrantDoc>(sql, 'oauth:grants')
     this.organizations = createCollection<OrganizationDoc>(sql, 'oauth:organizations')
     this.deviceCodes = createCollection<DeviceCodeDoc>(sql, 'oauth:deviceCodes')
+    this.consents = createCollection<ConsentDoc>(sql, 'oauth:consents')
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -327,6 +331,31 @@ export class CollectionsOAuthStorage implements OAuthStorage {
   async listUserGrants(userId: string): Promise<OAuthGrant[]> {
     const docs = this.grants.find({ userId })
     return docs.map((doc) => ({ ...doc, id: doc.id }))
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Consent Operations
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async getConsent(userId: string, clientId: string): Promise<OAuthConsent | null> {
+    const id = `${userId}:${clientId}`
+    const doc = this.consents.get(id)
+    return doc ? { userId: doc.userId, clientId: doc.clientId, scopes: doc.scopes, createdAt: doc.createdAt, updatedAt: doc.updatedAt } : null
+  }
+
+  async saveConsent(consent: OAuthConsent): Promise<void> {
+    const id = `${consent.userId}:${consent.clientId}`
+    this.consents.put(id, consent as ConsentDoc)
+  }
+
+  async revokeConsent(userId: string, clientId: string): Promise<void> {
+    const id = `${userId}:${clientId}`
+    this.consents.delete(id)
+  }
+
+  async listUserConsents(userId: string): Promise<OAuthConsent[]> {
+    const docs = this.consents.find({ userId })
+    return docs.map((doc) => ({ userId: doc.userId, clientId: doc.clientId, scopes: doc.scopes, createdAt: doc.createdAt, updatedAt: doc.updatedAt }))
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -9,6 +9,20 @@ import { DurableObject } from 'cloudflare:workers'
 import { createOAuth21Server, CollectionsOAuthStorage, SigningKeyManager, type SerializedSigningKey } from '@dotdo/oauth'
 import type { Hono } from 'hono'
 
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+function isSerializedSigningKey(data: unknown): data is SerializedSigningKey {
+  if (!isObject(data)) return false
+  if (typeof data.kid !== 'string') return false
+  if (data.alg !== 'RS256') return false
+  if (!isObject(data.privateKeyJwk)) return false
+  if (!isObject(data.publicKeyJwk)) return false
+  if (typeof data.createdAt !== 'number') return false
+  return true
+}
+
 /**
  * Environment bindings for the OAuth DO
  */
@@ -60,7 +74,10 @@ export class OAuthDO extends DurableObject<OAuthDOEnv> {
     // Load signing key with priority: env secret > DO storage > generate + persist
     if (this.env.SIGNING_KEY_JWK) {
       // Load from env secret - the most secure option
-      const keyData = JSON.parse(this.env.SIGNING_KEY_JWK) as SerializedSigningKey
+      const keyData = JSON.parse(this.env.SIGNING_KEY_JWK)
+      if (!isSerializedSigningKey(keyData)) {
+        throw new Error('SIGNING_KEY_JWK env var contains invalid signing key data')
+      }
       await this.keyManager.loadKeys([keyData])
     } else {
       // Try to load from DO SQLite storage (survives restarts)
@@ -69,7 +86,13 @@ export class OAuthDO extends DurableObject<OAuthDOEnv> {
         .toArray() as { key_data: string }[]
 
       if (storedKeys.length > 0) {
-        const serializedKeys = storedKeys.map(row => JSON.parse(row.key_data) as SerializedSigningKey)
+        const serializedKeys = storedKeys.map(row => {
+          const parsed = JSON.parse(row.key_data)
+          if (!isSerializedSigningKey(parsed)) {
+            throw new Error(`Invalid signing key data stored in DO SQLite for kid in row`)
+          }
+          return parsed
+        })
         await this.keyManager.loadKeys(serializedKeys)
       } else {
         // Generate a new key and persist it in DO storage

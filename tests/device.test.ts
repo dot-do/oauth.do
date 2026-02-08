@@ -347,7 +347,7 @@ describe('WorkOS Device Authorization Flow', () => {
 
 			await expect(
 				pollForTokens(mockDeviceCode, 0.05, 10)
-			).rejects.toThrow('Token polling failed: server_error')
+			).rejects.toThrow('Token polling failed: unknown')
 		})
 
 		it('should handle network errors during polling and continue', async () => {

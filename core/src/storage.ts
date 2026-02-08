@@ -14,6 +14,7 @@ import type {
   OAuthRefreshToken,
   OAuthGrant,
   OAuthDeviceCode,
+  OAuthConsent,
 } from './types.js'
 
 /**
@@ -216,6 +217,30 @@ export interface OAuthStorage {
   listUserGrants(userId: string): Promise<OAuthGrant[]>
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Consent Operations
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Get consent for a user+client pair
+   */
+  getConsent(userId: string, clientId: string): Promise<OAuthConsent | null>
+
+  /**
+   * Save consent (create or update)
+   */
+  saveConsent(consent: OAuthConsent): Promise<void>
+
+  /**
+   * Revoke consent for a user+client pair
+   */
+  revokeConsent(userId: string, clientId: string): Promise<void>
+
+  /**
+   * List all consents for a user
+   */
+  listUserConsents(userId: string): Promise<OAuthConsent[]>
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // Device Code Operations (RFC 8628)
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -272,6 +297,7 @@ export class MemoryOAuthStorage implements OAuthStorage {
   private accessTokens = new Map<string, OAuthAccessToken>()
   private refreshTokens = new Map<string, OAuthRefreshToken>()
   private grants = new Map<string, OAuthGrant>()
+  private consents = new Map<string, OAuthConsent>()
   private deviceCodes = new Map<string, OAuthDeviceCode>()
   private deviceCodesByUserCode = new Map<string, string>()
 
@@ -485,6 +511,27 @@ export class MemoryOAuthStorage implements OAuthStorage {
     return Array.from(this.grants.values()).filter((g) => g.userId === userId && !g.revoked)
   }
 
+  // Consent operations
+  private consentKey(userId: string, clientId: string): string {
+    return `${userId}:${clientId}`
+  }
+
+  async getConsent(userId: string, clientId: string): Promise<OAuthConsent | null> {
+    return this.consents.get(this.consentKey(userId, clientId)) ?? null
+  }
+
+  async saveConsent(consent: OAuthConsent): Promise<void> {
+    this.consents.set(this.consentKey(consent.userId, consent.clientId), consent)
+  }
+
+  async revokeConsent(userId: string, clientId: string): Promise<void> {
+    this.consents.delete(this.consentKey(userId, clientId))
+  }
+
+  async listUserConsents(userId: string): Promise<OAuthConsent[]> {
+    return Array.from(this.consents.values()).filter((c) => c.userId === userId)
+  }
+
   // Device code operations (RFC 8628)
   async saveDeviceCode(deviceCode: OAuthDeviceCode): Promise<void> {
     this.deviceCodes.set(deviceCode.deviceCode, deviceCode)
@@ -525,6 +572,7 @@ export class MemoryOAuthStorage implements OAuthStorage {
     this.accessTokens.clear()
     this.refreshTokens.clear()
     this.grants.clear()
+    this.consents.clear()
     this.deviceCodes.clear()
     this.deviceCodesByUserCode.clear()
   }

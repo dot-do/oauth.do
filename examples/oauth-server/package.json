@@ -1,0 +1,21 @@
+{
+  "name": "oauth-server-example",
+  "version": "1.0.0",
+  "description": "Deploy your own OAuth 2.1 server on Cloudflare Workers with @dotdo/oauth",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dotdo/oauth": "^0.1.7",
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250124.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^4.0.0"
+  }
+}

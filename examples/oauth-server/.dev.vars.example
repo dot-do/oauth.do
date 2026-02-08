@@ -1,0 +1,6 @@
+# Copy this file to .dev.vars for local development
+# wrangler automatically loads .dev.vars when running `wrangler dev`
+
+# For production mode, set these secrets:
+# WORKOS_API_KEY=sk_live_xxx
+# WORKOS_CLIENT_ID=client_xxx

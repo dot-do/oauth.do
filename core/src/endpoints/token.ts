@@ -12,7 +12,7 @@ import type { Context } from 'hono'
 import type { OAuthStorage } from '../storage.js'
 import type { OAuthClient, OAuthError, TokenResponse } from '../types.js'
 import { generateToken, verifyCodeChallenge, verifyClientSecret } from '../pkce.js'
-import type { AccessTokenClaims } from '../jwt-signing.js'
+import { signAccessToken, type AccessTokenClaims } from '../jwt-signing.js'
 
 /**
  * Result of client authentication
@@ -154,7 +154,6 @@ async function signJWTAccessToken(
   options: JWTSigningOptions,
   expiresIn: number
 ): Promise<string> {
-  const { signAccessToken } = await import('../jwt-signing.js')
   const key = await options.getSigningKey()
   return signAccessToken(key, claims, {
     issuer: options.issuer,

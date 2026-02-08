@@ -48,6 +48,10 @@ export type { OAuth21ServerConfig, OAuth21Server } from './server.js'
 export { createTestHelpers, generateLoginFormHtml } from './dev.js'
 export type { DevModeConfig, DevUser, TestHelpers } from './dev.js'
 
+// Consent Screen
+export { generateConsentScreenHtml, getScopeDescription, consentCoversScopes } from './consent.js'
+export type { ConsentScreenOptions } from './consent.js'
+
 // Storage
 export { MemoryOAuthStorage } from './storage.js'
 export type { OAuthStorage, ListOptions } from './storage.js'
@@ -117,6 +121,19 @@ export type {
   OAuthUserWithStripe as StripeUser,
 } from './stripe.js'
 
+// Runtime validation guards
+export {
+  isStripeWebhookEvent,
+  isStripeApiError,
+  isJWTHeader,
+  isJWTPayload,
+  isSerializedSigningKey,
+  isStringArray,
+  isIntrospectionResponse,
+  assertValid,
+  ValidationError,
+} from './guards.js'
+
 // Types
 export type {
   OAuthUser,
@@ -126,6 +143,7 @@ export type {
   OAuthAccessToken,
   OAuthRefreshToken,
   OAuthGrant,
+  OAuthConsent,
   OAuthServerMetadata,
   OAuthResourceMetadata,
   TokenResponse,

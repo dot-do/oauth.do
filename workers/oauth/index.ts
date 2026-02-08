@@ -58,6 +58,16 @@ interface IntrospectionResponse {
   [key: string]: unknown
 }
 
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+function isIntrospectionResponse(data: unknown): data is IntrospectionResponse {
+  if (!isObject(data)) return false
+  if (typeof data.active !== 'boolean') return false
+  return true
+}
+
 /**
  * Get the OAuth Durable Object stub
  * Uses a singleton pattern - all requests go to the same DO instance
@@ -413,7 +423,11 @@ export default class OAuthWorker extends WorkerEntrypoint<Env> {
       return { active: false }
     }
 
-    return response.json() as Promise<IntrospectionResponse>
+    const data = await response.json()
+    if (!isIntrospectionResponse(data)) {
+      return { active: false }
+    }
+    return data
   }
 
   /**

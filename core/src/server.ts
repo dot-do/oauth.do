@@ -109,6 +109,18 @@ export interface OAuth21ServerConfig {
    * If set, clients can provide this token via x-admin-token header to register
    */
   adminToken?: string
+  /**
+   * Trusted (first-party) client IDs that skip the consent screen.
+   * These are clients you own and control (e.g., your own SPA, CLI).
+   * Third-party clients (Claude, ChatGPT, etc.) will always see a consent screen.
+   * The special value 'first-party' (used by /login) is always trusted.
+   */
+  trustedClientIds?: string[]
+  /**
+   * Skip consent screen entirely for all clients (default: false).
+   * Use this only in development or when consent is handled externally.
+   */
+  skipConsent?: boolean
 }
 
 /**
@@ -180,6 +192,8 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     trustedIssuers,
     requireRegistrationAuth = false,
     adminToken,
+    trustedClientIds = [],
+    skipConsent = false,
   } = config
 
   // Validate configuration
@@ -295,6 +309,8 @@ export function createOAuth21Server(config: OAuth21ServerConfig): OAuth21Server 
     useJwtAccessTokens,
     requireRegistrationAuth,
     adminToken,
+    trustedClientIds,
+    skipConsent,
     testHelpers: app.testHelpers,
     getEffectiveIssuer,
     validateRedirectUriScheme,

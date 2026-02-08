@@ -6,6 +6,7 @@
  * - POST /login — Dev mode login form submission
  * - GET /api/callback — Upstream OAuth callback
  * - POST /exchange — Platform token exchange
+ * - POST /consent — Consent form submission (allow/deny)
  */
 
 import { Hono } from 'hono'
@@ -16,6 +17,7 @@ import {
   createLoginPostHandler,
   createCallbackHandler,
   createExchangeHandler,
+  createConsentPostHandler,
   type AuthorizeHandlerConfig,
 } from '../endpoints/index.js'
 
@@ -43,6 +45,8 @@ export function createAuthorizeRoutes(ctx: ServerContext): Hono {
     validateRedirectUriScheme: ctx.validateRedirectUriScheme,
     validateScopes: ctx.validateScopes,
     generateAccessToken: ctx.generateAccessToken,
+    trustedClientIds: ctx.trustedClientIds,
+    skipConsent: ctx.skipConsent,
   }
 
   app.get('/authorize', createAuthorizeHandler(authorizeHandlerConfig))
@@ -50,6 +54,7 @@ export function createAuthorizeRoutes(ctx: ServerContext): Hono {
   app.post('/login', createLoginPostHandler(authorizeHandlerConfig))
   app.get('/api/callback', createCallbackHandler(authorizeHandlerConfig))
   app.post('/exchange', createExchangeHandler(authorizeHandlerConfig))
+  app.post('/consent', createConsentPostHandler(authorizeHandlerConfig))
 
   return app
 }

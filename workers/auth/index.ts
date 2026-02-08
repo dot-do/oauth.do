@@ -68,6 +68,35 @@ interface VerifyResult {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Runtime Guards
+// ═══════════════════════════════════════════════════════════════════════════
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+function isVerifyResult(data: unknown): data is VerifyResult {
+  if (!isObject(data)) return false
+  if (typeof data.valid !== 'boolean') return false
+  if (data.error !== undefined && typeof data.error !== 'string') return false
+  if (data.cached !== undefined && typeof data.cached !== 'boolean') return false
+  if (data.user !== undefined) {
+    if (!isObject(data.user)) return false
+    if (typeof (data.user as Record<string, unknown>).id !== 'string') return false
+  }
+  return true
+}
+
+function isWorkOSUserResponse(data: unknown): data is { id: string; email: string; first_name?: string; last_name?: string } {
+  if (!isObject(data)) return false
+  if (typeof data.id !== 'string') return false
+  if (typeof data.email !== 'string') return false
+  if (data.first_name !== undefined && typeof data.first_name !== 'string') return false
+  if (data.last_name !== undefined && typeof data.last_name !== 'string') return false
+  return true
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -295,7 +324,11 @@ async function verifyApiKey(key: string, env: Env): Promise<VerifyResult> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key }),
       })
-      return (await response.json()) as VerifyResult
+      const result = await response.json()
+      if (!isVerifyResult(result)) {
+        return { valid: false, error: 'Invalid response from API key verification service' }
+      }
+      return result
     } catch {
       return { valid: false, error: 'API key verification service unavailable' }
     }
@@ -309,7 +342,10 @@ async function verifyApiKey(key: string, env: Env): Promise<VerifyResult> {
       })
 
       if (response.ok) {
-        const data = (await response.json()) as { id: string; email: string; first_name?: string; last_name?: string }
+        const data = await response.json()
+        if (!isWorkOSUserResponse(data)) {
+          return { valid: false, error: 'Invalid response from WorkOS API' }
+        }
         return {
           valid: true,
           user: {

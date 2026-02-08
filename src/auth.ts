@@ -1,5 +1,6 @@
 import { getConfig } from './config.js'
 import { getEnv } from './utils.js'
+import { isUser, isLoginResponse, isTokenResponse, ValidationError } from './guards.js'
 import type { User, AuthResult, TokenResponse, StoredTokenData } from './types.js'
 
 /**
@@ -51,8 +52,11 @@ export async function getUser(token?: string): Promise<AuthResult> {
 			throw new Error(`Authentication failed: ${response.statusText}`)
 		}
 
-		const user = (await response.json()) as User
-		return { user, token: authToken }
+		const data = await response.json()
+		if (!isUser(data)) {
+			throw new ValidationError('User', 'invalid user response from /me endpoint', data)
+		}
+		return { user: data, token: authToken }
 	} catch (error) {
 		console.error('Auth error:', error)
 		return { user: null }
@@ -86,7 +90,10 @@ export async function login(credentials: {
 			throw new Error(`Login failed: ${response.statusText}`)
 		}
 
-		const data = (await response.json()) as { user: User; token: string }
+		const data = await response.json()
+		if (!isLoginResponse(data)) {
+			throw new ValidationError('LoginResponse', 'invalid response from /login endpoint', data)
+		}
 		return { user: data.user, token: data.token }
 	} catch (error) {
 		console.error('Login error:', error)
@@ -240,7 +247,11 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
 		throw new Error(`Token refresh failed: ${response.status} - ${errorText}`)
 	}
 
-	return (await response.json()) as TokenResponse
+	const data = await response.json()
+	if (!isTokenResponse(data)) {
+		throw new ValidationError('TokenResponse', 'invalid response from token refresh endpoint', data)
+	}
+	return data
 }
 
 /**

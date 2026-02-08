@@ -333,6 +333,22 @@ export interface OAuthDeviceCode {
 }
 
 /**
+ * OAuth 2.1 Consent - records a user's consent for a client to access specific scopes
+ */
+export interface OAuthConsent {
+  /** User who granted consent */
+  userId: string
+  /** Client that received consent */
+  clientId: string
+  /** Scopes the user consented to */
+  scopes: string[]
+  /** When consent was granted */
+  createdAt: number
+  /** When consent was last updated */
+  updatedAt: number
+}
+
+/**
  * Device Authorization Response (RFC 8628 Section 3.2)
  */
 export interface DeviceAuthorizationResponse {

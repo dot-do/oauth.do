@@ -33,6 +33,27 @@ export {
 	CompositeTokenStorage,
 } from './storage.js'
 
+// Runtime validation guards
+export {
+	isUser,
+	isTokenResponse,
+	isDeviceAuthorizationResponse,
+	isLoginResponse,
+	isErrorResponse,
+	isTokenError,
+	toTokenError,
+	isStoredTokenData,
+	isGitHubDeviceAuthWireResponse,
+	isGitHubTokenWireSuccess,
+	isGitHubTokenWireError,
+	toGitHubTokenError,
+	isGitHubUserWireResponse,
+	isVerifyResult,
+	isWorkOSUserResponse,
+	assertValid,
+	ValidationError,
+} from './guards.js'
+
 // Types
 export type {
 	OAuthConfig,

@@ -11,6 +11,7 @@ export {
   createLoginPostHandler,
   createCallbackHandler,
   createExchangeHandler,
+  createConsentPostHandler,
   type AuthorizeHandlerConfig,
 } from './authorize.js'
 

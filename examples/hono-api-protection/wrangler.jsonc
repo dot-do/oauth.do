@@ -1,0 +1,8 @@
+{
+  "name": "oauth-hono-api-protection-example",
+  "main": "index.ts",
+  "compatibility_date": "2025-01-01",
+  "dev": {
+    "port": 3000
+  }
+}

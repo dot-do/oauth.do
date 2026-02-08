@@ -1,5 +1,6 @@
 import type { TokenStorage, StoredTokenData } from './types.js'
 import { getEnv } from './utils.js'
+import { isStoredTokenData } from './guards.js'
 
 // Keychain service and account identifiers
 const KEYCHAIN_SERVICE = 'oauth.do'
@@ -247,7 +248,14 @@ export class KeychainTokenStorage implements TokenStorage {
 
 			// Check if it's JSON format (new format with refresh token)
 			if (stored.startsWith('{')) {
-				return JSON.parse(stored) as StoredTokenData
+				const parsed = JSON.parse(stored)
+				if (isStoredTokenData(parsed)) {
+					return parsed
+				}
+				if (getEnv('DEBUG')) {
+					console.warn('Keychain stored data failed StoredTokenData validation')
+				}
+				return null
 			}
 
 			// Legacy plain text format - convert to token data
@@ -385,8 +393,11 @@ export class SecureFileTokenStorage implements TokenStorage {
 
 			// Check if it's JSON (new format) or plain token (legacy)
 			if (trimmed.startsWith('{')) {
-				const data = JSON.parse(trimmed) as StoredTokenData
-				return data.accessToken
+				const parsed = JSON.parse(trimmed)
+				if (isStoredTokenData(parsed)) {
+					return parsed.accessToken
+				}
+				return null
 			}
 
 			return trimmed
@@ -413,7 +424,11 @@ export class SecureFileTokenStorage implements TokenStorage {
 
 			// Check if it's JSON format
 			if (trimmed.startsWith('{')) {
-				return JSON.parse(trimmed) as StoredTokenData
+				const parsed = JSON.parse(trimmed)
+				if (isStoredTokenData(parsed)) {
+					return parsed
+				}
+				return null
 			}
 
 			// Legacy plain text format - convert to token data
@@ -610,7 +625,11 @@ export class LocalStorageTokenStorage implements TokenStorage {
 		}
 		// Check if it's JSON format
 		if (stored.startsWith('{')) {
-			return JSON.parse(stored) as StoredTokenData
+			const parsed = JSON.parse(stored)
+			if (isStoredTokenData(parsed)) {
+				return parsed
+			}
+			return null
 		}
 		// Legacy plain text format
 		return { accessToken: stored }

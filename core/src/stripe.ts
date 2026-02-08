@@ -6,6 +6,7 @@
  */
 
 import type { OAuthUser } from './types.js'
+import { isStripeWebhookEvent, isStripeApiError, ValidationError } from './guards.js'
 
 /**
  * Stripe customer data
@@ -281,8 +282,9 @@ export function createStripeClient(secretKey: string): StripeClient {
     const response = await fetch(`${baseUrl}${path}`, fetchOptions)
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({})) as { error?: { message?: string } }
-      throw new Error(`Stripe API error: ${error.error?.message || response.statusText}`)
+      const errorData = await response.json().catch(() => ({}))
+      const errorMsg = isStripeApiError(errorData) ? errorData.error?.message : undefined
+      throw new Error(`Stripe API error: ${errorMsg || response.statusText}`)
     }
 
     return response.json() as Promise<T>
@@ -299,7 +301,11 @@ export function createStripeClient(secretKey: string): StripeClient {
     },
     webhooks: {
       constructEvent: async (payload, signature, secret) => {
-        const event = JSON.parse(payload) as StripeWebhookEvent
+        const parsed = JSON.parse(payload)
+        if (!isStripeWebhookEvent(parsed)) {
+          throw new ValidationError('StripeWebhookEvent', 'invalid webhook payload', parsed)
+        }
+        const event = parsed
 
         // Parse the signature header
         const signatureHeader = parseStripeSignature(signature)
@@ -424,7 +430,11 @@ export async function verifyStripeWebhookAsync(
   signature: string,
   webhookSecret: string
 ): Promise<StripeWebhookEvent> {
-  const event = JSON.parse(payload) as StripeWebhookEvent
+  const parsed = JSON.parse(payload)
+  if (!isStripeWebhookEvent(parsed)) {
+    throw new ValidationError('StripeWebhookEvent', 'invalid webhook payload', parsed)
+  }
+  const event = parsed
 
   // Parse and verify the signature
   const signatureHeader = parseStripeSignature(signature)
