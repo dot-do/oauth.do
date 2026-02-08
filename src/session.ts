@@ -109,17 +109,70 @@ const IV_LENGTH = 12
 const TAG_LENGTH = 128
 
 /**
- * Derive an AES-GCM encryption key from a secret string
+ * Derive an AES-GCM encryption key from a secret string using PBKDF2.
+ *
+ * Uses 100,000 iterations of PBKDF2-SHA-256 with a static application salt.
+ * This is a significant security improvement over the previous approach of
+ * padding/truncating the secret to 32 bytes.
+ */
+async function deriveKey(secret: string): Promise<CryptoKey> {
+  const encoder = new TextEncoder()
+  const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(secret), 'PBKDF2', false, ['deriveKey'])
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: encoder.encode('oauth.do-session-v1'),
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    { name: ALGORITHM, length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+/**
+ * Derive an AES-GCM encryption key using the legacy (weak) method.
+ * Kept only for backwards-compatible decryption of existing sessions.
+ * @deprecated Use deriveKey() for all new encryption.
+ */
+async function getLegacyEncryptionKey(secret: string): Promise<CryptoKey> {
+  const encoder = new TextEncoder()
+  return crypto.subtle.importKey('raw', encoder.encode(secret.padEnd(32, '0').slice(0, 32)), { name: ALGORITHM }, false, ['encrypt', 'decrypt'])
+}
+
+/**
+ * Cache for derived keys to avoid repeated PBKDF2 computation.
+ * Maps secret string to { key, legacyKey } pair.
+ */
+const keyCache = new Map<string, { key: CryptoKey; legacyKey?: CryptoKey }>()
+
+/**
+ * Get the PBKDF2-derived encryption key for a secret, with caching.
  */
 async function getEncryptionKey(secret: string): Promise<CryptoKey> {
-  const encoder = new TextEncoder()
-  return crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret.padEnd(32, '0').slice(0, 32)),
-    { name: ALGORITHM },
-    false,
-    ['encrypt', 'decrypt']
-  )
+  const cached = keyCache.get(secret)
+  if (cached) return cached.key
+  const key = await deriveKey(secret)
+  keyCache.set(secret, { key })
+  return key
+}
+
+/**
+ * Get the legacy encryption key for a secret, with caching.
+ */
+async function getLegacyKey(secret: string): Promise<CryptoKey> {
+  const cached = keyCache.get(secret)
+  if (cached?.legacyKey) return cached.legacyKey
+  const legacyKey = await getLegacyEncryptionKey(secret)
+  const existing = keyCache.get(secret)
+  if (existing) {
+    existing.legacyKey = legacyKey
+  } else {
+    keyCache.set(secret, { key: await deriveKey(secret), legacyKey })
+  }
+  return legacyKey
 }
 
 /**
@@ -151,26 +204,15 @@ export async function encodeSession(session: SessionData, secret?: string): Prom
 }
 
 /**
- * Decode session data with AES-GCM decryption.
- * Returns null if decryption fails or data is invalid.
- *
- * @param encoded - Base64-encoded encrypted session string
- * @param secret - Encryption secret (must match the one used for encoding)
- * @returns Decoded session data or null
+ * Attempt to decrypt a combined IV+ciphertext buffer with the given key.
+ * Returns the parsed SessionData on success, or null on failure.
  */
-export async function decodeSession(encoded: string, secret?: string): Promise<SessionData | null> {
+async function tryDecrypt(combined: Uint8Array, key: CryptoKey): Promise<SessionData | null> {
   try {
-    const key = await getEncryptionKey(secret ?? getSecretWithValidation(defaultSessionConfig.secret))
-    const combined = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0))
-
     const iv = combined.slice(0, IV_LENGTH)
     const ciphertext = combined.slice(IV_LENGTH)
 
-    const decrypted = await crypto.subtle.decrypt(
-      { name: ALGORITHM, iv, tagLength: TAG_LENGTH },
-      key,
-      ciphertext
-    )
+    const decrypted = await crypto.subtle.decrypt({ name: ALGORITHM, iv, tagLength: TAG_LENGTH }, key, ciphertext)
 
     const decoder = new TextDecoder()
     const parsed: unknown = JSON.parse(decoder.decode(decrypted))
@@ -180,6 +222,46 @@ export async function decodeSession(encoded: string, secret?: string): Promise<S
     }
 
     return parsed
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Decode session data with AES-GCM decryption.
+ * Returns null if decryption fails or data is invalid.
+ *
+ * Migration path: tries PBKDF2-derived key first, then falls back to the
+ * legacy padded key for sessions encrypted before the KDF upgrade. Sessions
+ * decrypted via the legacy path are flagged via `_needsReEncrypt` so that
+ * callers can transparently re-encrypt with the new KDF.
+ *
+ * @param encoded - Base64-encoded encrypted session string
+ * @param secret - Encryption secret (must match the one used for encoding)
+ * @returns Decoded session data or null
+ */
+export async function decodeSession(encoded: string, secret?: string): Promise<SessionData | null> {
+  try {
+    const resolvedSecret = secret ?? getSecretWithValidation(defaultSessionConfig.secret)
+    const combined = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0))
+
+    // Try new PBKDF2-derived key first
+    const key = await getEncryptionKey(resolvedSecret)
+    const result = await tryDecrypt(combined, key)
+    if (result) return result
+
+    // Fallback: try legacy key (padding/truncation)
+    const legacy = await getLegacyKey(resolvedSecret)
+    const legacyResult = await tryDecrypt(combined, legacy)
+    if (legacyResult) {
+      // Mark session as needing re-encryption with the new KDF.
+      // This flag is non-enumerable so it won't leak into JSON serialization,
+      // but callers (e.g. middleware) can check it to transparently upgrade.
+      Object.defineProperty(legacyResult, '_needsReEncrypt', { value: true, enumerable: false })
+      return legacyResult
+    }
+
+    return null
   } catch {
     return null
   }
