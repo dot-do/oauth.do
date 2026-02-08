@@ -78,9 +78,14 @@ export interface ApiKeyOptions {
 // Constants
 // ═══════════════════════════════════════════════════════════════════════════
 
-const OAUTH_DO_CONFIG = {
-  clientId: 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
-  jwksUri: 'https://api.workos.com/sso/jwks/client_01JQYTRXK9ZPD8JPJTKDCRB656',
+const DEFAULT_CLIENT_ID = 'client_01JQYTRXK9ZPD8JPJTKDCRB656'
+
+function getDefaultConfig() {
+  const clientId = (typeof process !== 'undefined' && process.env?.OAUTH_CLIENT_ID) || DEFAULT_CLIENT_ID
+  return {
+    clientId,
+    jwksUri: `https://api.workos.com/sso/jwks/${clientId}`,
+  }
 }
 
 const TOKEN_CACHE_TTL = 5 * 60 // 5 minutes
@@ -256,11 +261,12 @@ function jsonError(message: string, status: number): Response {
  * ```
  */
 export function optionalAuth(options: AuthOptions = {}) {
+  const defaults = getDefaultConfig()
   const {
     cookieName = 'auth',
     headerName = 'Authorization',
-    clientId = OAUTH_DO_CONFIG.clientId,
-    jwksUri = OAUTH_DO_CONFIG.jwksUri,
+    clientId = defaults.clientId,
+    jwksUri = defaults.jwksUri,
     skip,
     jwksCacheTtl = 3600,
   } = options

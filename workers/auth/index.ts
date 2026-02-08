@@ -387,8 +387,10 @@ app.get('/health', (c) => c.json({ status: 'ok', service: 'auth' }))
 
 // Verify token (POST body or query param)
 app.post('/verify', async (c) => {
-  const body = await c.req.json().catch(() => ({})) as { token?: string }
-  const token = body.token || c.req.query('token')
+  const raw: unknown = await c.req.json().catch(() => ({}))
+  const body = (typeof raw === 'object' && raw !== null) ? raw as Record<string, unknown> : {}
+  const bodyToken = typeof body.token === 'string' ? body.token : undefined
+  const token = bodyToken || c.req.query('token')
 
   if (!token) {
     return c.json({ valid: false, error: 'Token required' }, 400)
@@ -450,8 +452,9 @@ app.post('/invalidate', async (c) => {
     return c.json({ error: authResult.error || 'Invalid credentials' }, 401)
   }
 
-  const body = await c.req.json().catch(() => ({})) as { token?: string }
-  const token = body.token
+  const raw: unknown = await c.req.json().catch(() => ({}))
+  const body = (typeof raw === 'object' && raw !== null) ? raw as Record<string, unknown> : {}
+  const token = typeof body.token === 'string' ? body.token : undefined
 
   if (!token) {
     return c.json({ error: 'Token required' }, 400)

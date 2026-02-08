@@ -19,6 +19,7 @@ import type {
   OAuthRefreshToken,
   OAuthGrant,
   OAuthOrganization,
+  OAuthDeviceCode,
 } from './types.js'
 
 /**
@@ -32,6 +33,7 @@ type AccessTokenDoc = Omit<OAuthAccessToken, 'token'> & { token: string } & Reco
 type RefreshTokenDoc = Omit<OAuthRefreshToken, 'token'> & { token: string } & Record<string, unknown>
 type GrantDoc = Omit<OAuthGrant, 'id'> & { id: string } & Record<string, unknown>
 type OrganizationDoc = Omit<OAuthOrganization, 'id'> & { id: string } & Record<string, unknown>
+type DeviceCodeDoc = Omit<OAuthDeviceCode, 'deviceCode'> & { deviceCode: string } & Record<string, unknown>
 
 /**
  * Collections-based OAuth storage implementation
@@ -66,6 +68,7 @@ export class CollectionsOAuthStorage implements OAuthStorage {
   private refreshTokens: SyncCollection<RefreshTokenDoc>
   private grants: SyncCollection<GrantDoc>
   private organizations: SyncCollection<OrganizationDoc>
+  private deviceCodes: SyncCollection<DeviceCodeDoc>
 
   constructor(sql: SqlStorage) {
     // Initialize collections schema (single table for all collections)
@@ -79,6 +82,7 @@ export class CollectionsOAuthStorage implements OAuthStorage {
     this.refreshTokens = createCollection<RefreshTokenDoc>(sql, 'oauth:refreshTokens')
     this.grants = createCollection<GrantDoc>(sql, 'oauth:grants')
     this.organizations = createCollection<OrganizationDoc>(sql, 'oauth:organizations')
+    this.deviceCodes = createCollection<DeviceCodeDoc>(sql, 'oauth:deviceCodes')
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -326,6 +330,41 @@ export class CollectionsOAuthStorage implements OAuthStorage {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Device Code Operations (RFC 8628)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async saveDeviceCode(deviceCode: OAuthDeviceCode): Promise<void> {
+    const doc = {
+      ...deviceCode,
+      deviceCode: deviceCode.deviceCode,
+    } as DeviceCodeDoc
+    this.deviceCodes.put(deviceCode.deviceCode, doc)
+  }
+
+  async getDeviceCode(deviceCode: string): Promise<OAuthDeviceCode | null> {
+    const doc = this.deviceCodes.get(deviceCode)
+    return doc ? { ...doc, deviceCode: doc.deviceCode } : null
+  }
+
+  async getDeviceCodeByUserCode(userCode: string): Promise<OAuthDeviceCode | null> {
+    const docs = this.deviceCodes.find({ userCode: userCode.toUpperCase() }, { limit: 1 })
+    const doc = docs[0]
+    return doc ? { ...doc, deviceCode: doc.deviceCode } : null
+  }
+
+  async updateDeviceCode(deviceCode: OAuthDeviceCode): Promise<void> {
+    const doc = {
+      ...deviceCode,
+      deviceCode: deviceCode.deviceCode,
+    } as DeviceCodeDoc
+    this.deviceCodes.put(deviceCode.deviceCode, doc)
+  }
+
+  async deleteDeviceCode(deviceCode: string): Promise<void> {
+    this.deviceCodes.delete(deviceCode)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // Cleanup Operations
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -333,7 +372,7 @@ export class CollectionsOAuthStorage implements OAuthStorage {
    * Clean up expired tokens and codes.
    * Call this periodically (e.g., via cron or alarm) to free storage.
    */
-  async cleanup(): Promise<{ authCodes: number; accessTokens: number }> {
+  async cleanup(): Promise<{ authCodes: number; accessTokens: number; deviceCodes: number }> {
     const now = Date.now()
 
     // Find and delete expired auth codes
@@ -348,9 +387,16 @@ export class CollectionsOAuthStorage implements OAuthStorage {
       this.accessTokens.delete(token.token)
     }
 
+    // Find and delete expired device codes
+    const expiredDeviceCodes = this.deviceCodes.find({ expiresAt: { $lt: now } })
+    for (const dc of expiredDeviceCodes) {
+      this.deviceCodes.delete(dc.deviceCode)
+    }
+
     return {
       authCodes: expiredCodes.length,
       accessTokens: expiredTokens.length,
+      deviceCodes: expiredDeviceCodes.length,
     }
   }
 }

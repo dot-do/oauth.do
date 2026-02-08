@@ -618,8 +618,16 @@ export function createExchangeHandler(config: AuthorizeHandlerConfig) {
       return c.json({ error: 'invalid_request', error_description: 'Origin header is required' } as OAuthError, 403)
     }
 
-    const body = await c.req.json<{ code: string }>()
-    const code = body.code
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: 'invalid_request', error_description: 'Invalid JSON body' } as OAuthError, 400)
+    }
+
+    const code = (typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>).code === 'string')
+      ? (body as { code: string }).code
+      : undefined
 
     if (!code) {
       return c.json({ error: 'invalid_request', error_description: 'code is required' } as OAuthError, 400)

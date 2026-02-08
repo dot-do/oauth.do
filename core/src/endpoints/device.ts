@@ -211,7 +211,15 @@ export function createDeviceAuthorizationHandler(config: DeviceHandlerConfig) {
     let params: Record<string, string>
 
     if (contentType?.includes('application/json')) {
-      params = await c.req.json()
+      try {
+        const raw: unknown = await c.req.json()
+        if (typeof raw !== 'object' || raw === null) {
+          return c.json({ error: 'invalid_request', error_description: 'Request body must be a JSON object' } as OAuthError, 400)
+        }
+        params = Object.fromEntries(Object.entries(raw as Record<string, unknown>).map(([k, v]) => [k, v == null ? '' : String(v)]))
+      } catch {
+        return c.json({ error: 'invalid_request', error_description: 'Invalid JSON body' } as OAuthError, 400)
+      }
     } else {
       const formData = await c.req.parseBody()
       params = Object.fromEntries(Object.entries(formData).map(([k, v]) => [k, String(v)]))

@@ -56,29 +56,33 @@ export function createRegisterHandler(config: RegisterHandlerConfig) {
       }
     }
 
-    const body = await c.req.json<{
-      client_name: string
-      redirect_uris: string[]
-      grant_types?: string[]
-      response_types?: string[]
-      token_endpoint_auth_method?: string
-      scope?: string
-    }>()
-
-    if (debug) {
-      console.log('[OAuth] Client registration:', body)
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: 'invalid_client_metadata', error_description: 'Invalid JSON body' } as OAuthError, 400)
     }
 
-    if (!body.client_name) {
+    if (typeof body !== 'object' || body === null) {
+      return c.json({ error: 'invalid_client_metadata', error_description: 'Request body must be a JSON object' } as OAuthError, 400)
+    }
+
+    const parsed = body as Record<string, unknown>
+
+    if (debug) {
+      console.log('[OAuth] Client registration:', parsed)
+    }
+
+    if (typeof parsed.client_name !== 'string' || !parsed.client_name) {
       return c.json({ error: 'invalid_client_metadata', error_description: 'client_name is required' } as OAuthError, 400)
     }
 
-    if (!body.redirect_uris || body.redirect_uris.length === 0) {
-      return c.json({ error: 'invalid_client_metadata', error_description: 'redirect_uris is required' } as OAuthError, 400)
+    if (!Array.isArray(parsed.redirect_uris) || parsed.redirect_uris.length === 0 || !parsed.redirect_uris.every((u: unknown) => typeof u === 'string')) {
+      return c.json({ error: 'invalid_client_metadata', error_description: 'redirect_uris is required and must be an array of strings' } as OAuthError, 400)
     }
 
     // Enforce HTTPS for redirect URIs in production
-    for (const uri of body.redirect_uris) {
+    for (const uri of parsed.redirect_uris as string[]) {
       const schemeErr = validateRedirectUriScheme(uri)
       if (schemeErr) {
         return c.json({ error: 'invalid_client_metadata', error_description: schemeErr } as OAuthError, 400)
@@ -93,12 +97,12 @@ export function createRegisterHandler(config: RegisterHandlerConfig) {
     const client: OAuthClient = {
       clientId,
       clientSecretHash,
-      clientName: body.client_name,
-      redirectUris: body.redirect_uris,
-      grantTypes: (body.grant_types as OAuthClient['grantTypes']) || ['authorization_code', 'refresh_token'],
-      responseTypes: (body.response_types as OAuthClient['responseTypes']) || ['code'],
-      tokenEndpointAuthMethod: (body.token_endpoint_auth_method as OAuthClient['tokenEndpointAuthMethod']) || 'client_secret_basic',
-      ...(body.scope !== undefined && { scope: body.scope }),
+      clientName: parsed.client_name as string,
+      redirectUris: parsed.redirect_uris as string[],
+      grantTypes: (parsed.grant_types as OAuthClient['grantTypes']) || ['authorization_code', 'refresh_token'],
+      responseTypes: (parsed.response_types as OAuthClient['responseTypes']) || ['code'],
+      tokenEndpointAuthMethod: (parsed.token_endpoint_auth_method as OAuthClient['tokenEndpointAuthMethod']) || 'client_secret_basic',
+      ...(parsed.scope !== undefined && { scope: parsed.scope }),
       createdAt: Date.now(),
     }
 

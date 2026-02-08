@@ -22,8 +22,22 @@ const JWKS_CACHE_TTL = 60 * 60 * 1000 // 1 hour (keys rarely change)
 
 // WorkOS configuration
 const WORKOS_ISSUERS = ['https://auth.apis.do', 'https://api.workos.com']
-const WORKOS_CLIENT_ID = 'client_01JQYTRXK9ZPD8JPJTKDCRB656'
-const WORKOS_JWKS_URL = `https://api.workos.com/sso/jwks/${WORKOS_CLIENT_ID}`
+const DEFAULT_WORKOS_CLIENT_ID = 'client_01JQYTRXK9ZPD8JPJTKDCRB656'
+
+/** Resolve WorkOS client ID from env (if available) or use default */
+function getWorkosClientId(): string {
+  try {
+    // Cloudflare Workers use `env` from cloudflare:workers
+    const { env } = require('cloudflare:workers') as { env: { WORKOS_CLIENT_ID?: string } }
+    return env?.WORKOS_CLIENT_ID || DEFAULT_WORKOS_CLIENT_ID
+  } catch {
+    return DEFAULT_WORKOS_CLIENT_ID
+  }
+}
+
+function getWorkosJwksUrl(clientId?: string): string {
+  return `https://api.workos.com/sso/jwks/${clientId || getWorkosClientId()}`
+}
 
 // oauth.do issuer (for browser auth flow)
 const OAUTH_DO_ISSUER = 'https://oauth.do'
@@ -156,7 +170,7 @@ export async function verifyJwtWithFetcher(
 
     if (tokenIssuer && isWorkOSIssuer(tokenIssuer)) {
       // WorkOS token - use WorkOS JWKS
-      jwksUrl = WORKOS_JWKS_URL
+      jwksUrl = getWorkosJwksUrl()
       allowedIssuers = WORKOS_ISSUERS
       useFetcher = false
     } else if (tokenIssuer && isOAuthDoIssuer(tokenIssuer)) {

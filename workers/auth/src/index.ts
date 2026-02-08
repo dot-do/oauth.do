@@ -66,10 +66,25 @@ app.get('/health', (c) => c.json({ status: 'ok', service: 'auth' }))
 
 // RPC endpoint for assertAuth
 app.post('/assert', async (c) => {
-  const { request: reqData, options } = await c.req.json<{
-    request: { url: string; headers: Record<string, string> }
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'invalid_request', message: 'Invalid JSON body' }, 400)
+  }
+
+  if (typeof body !== 'object' || body === null) {
+    return c.json({ error: 'invalid_request', message: 'Request body must be an object' }, 400)
+  }
+
+  const { request: reqData, options } = body as {
+    request?: { url?: string; headers?: Record<string, string> }
     options?: { user?: string; org?: string; role?: string; permission?: string }
-  }>()
+  }
+
+  if (!reqData || typeof reqData.url !== 'string' || typeof reqData.headers !== 'object' || reqData.headers === null) {
+    return c.json({ error: 'invalid_request', message: 'request.url (string) and request.headers (object) are required' }, 400)
+  }
 
   // Reconstruct request from serialized data
   const headers = new Headers(reqData.headers)
@@ -89,9 +104,24 @@ app.post('/assert', async (c) => {
 
 // RPC endpoint for getUser (withAuth)
 app.post('/user', async (c) => {
-  const { request: reqData } = await c.req.json<{
-    request: { url: string; headers: Record<string, string> }
-  }>()
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'invalid_request', message: 'Invalid JSON body' }, 400)
+  }
+
+  if (typeof body !== 'object' || body === null) {
+    return c.json({ error: 'invalid_request', message: 'Request body must be an object' }, 400)
+  }
+
+  const { request: reqData } = body as {
+    request?: { url?: string; headers?: Record<string, string> }
+  }
+
+  if (!reqData || typeof reqData.url !== 'string' || typeof reqData.headers !== 'object' || reqData.headers === null) {
+    return c.json({ error: 'invalid_request', message: 'request.url (string) and request.headers (object) are required' }, 400)
+  }
 
   const headers = new Headers(reqData.headers)
   const request = new Request(reqData.url, { headers })

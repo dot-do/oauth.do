@@ -138,7 +138,7 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
   })
 
   // Rate limiting - strict for sensitive endpoints
-  const strictPaths = new Set(['/token', '/register', '/exchange', '/login', '/validate-api-key'])
+  const strictPaths = new Set(['/token', '/register', '/exchange', '/login', '/validate-api-key', '/device_authorization'])
   app.use('*', async (c, next) => {
     const path = new URL(c.req.url).pathname
     // Skip rate limiting for static assets and well-known endpoints
@@ -248,10 +248,37 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
     return stub.fetch(c.req.raw)
   })
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Device Authorization Grant (RFC 8628) - Route to Durable Object
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  app.post('/device_authorization', async (c) => {
+    const stub = getOAuthDO(c.env)
+    return stub.fetch(c.req.raw)
+  })
+
+  app.get('/device', async (c) => {
+    const stub = getOAuthDO(c.env)
+    return stub.fetch(c.req.raw)
+  })
+
+  app.post('/device', async (c) => {
+    const stub = getOAuthDO(c.env)
+    return stub.fetch(c.req.raw)
+  })
+
   // API Key validation endpoint - validates WorkOS API keys (sk_...)
   app.post('/validate-api-key', async (c) => {
-    const body = await c.req.json<{ value: string }>()
-    const result = await validateWorkosApiKey(body.value, c.env.WORKOS_API_KEY)
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ valid: false, error: 'Invalid JSON body' }, 400)
+    }
+    if (typeof body !== 'object' || body === null || typeof (body as Record<string, unknown>).value !== 'string') {
+      return c.json({ valid: false, error: 'Missing required field: value (string)' }, 400)
+    }
+    const result = await validateWorkosApiKey((body as { value: string }).value, c.env.WORKOS_API_KEY)
     const status = !result.valid ? (result.error === 'Invalid API key format' ? 400 : result.error === 'Validation request failed' ? 500 : 401) : 200
     return c.json(result, status)
   })
@@ -261,8 +288,10 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
     // Extract token from body or Authorization header
     let token: string | undefined
     try {
-      const body = await c.req.json<{ token?: string }>()
-      token = body?.token
+      const body: unknown = await c.req.json()
+      if (typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>).token === 'string') {
+        token = (body as { token: string }).token
+      }
     } catch {
       // No JSON body, check Authorization header
     }

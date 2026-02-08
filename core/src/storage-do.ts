@@ -14,6 +14,7 @@ import type {
   OAuthAccessToken,
   OAuthRefreshToken,
   OAuthGrant,
+  OAuthDeviceCode,
 } from './types.js'
 
 /**
@@ -158,6 +159,24 @@ export class DOSQLiteStorage implements OAuthStorage {
       )
     `)
 
+    // Device codes table (RFC 8628)
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS device_codes (
+        device_code TEXT PRIMARY KEY,
+        user_code TEXT NOT NULL UNIQUE,
+        client_id TEXT NOT NULL,
+        scope TEXT,
+        issued_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        interval_secs INTEGER NOT NULL DEFAULT 5,
+        user_id TEXT,
+        authorized INTEGER DEFAULT 0,
+        denied INTEGER DEFAULT 0,
+        effective_issuer TEXT,
+        last_poll_time INTEGER
+      )
+    `)
+
     // Signing keys table (for JWT signing)
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS signing_keys (
@@ -181,6 +200,8 @@ export class DOSQLiteStorage implements OAuthStorage {
     this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id)`)
     this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_client ON refresh_tokens(client_id)`)
     this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_grants_user ON grants(user_id)`)
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_user_code ON device_codes(user_code)`)
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_expires ON device_codes(expires_at)`)
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -493,6 +514,63 @@ export class DOSQLiteStorage implements OAuthStorage {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Device Code Operations (RFC 8628)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async saveDeviceCode(deviceCode: OAuthDeviceCode): Promise<void> {
+    this.sql.exec(
+      `INSERT OR REPLACE INTO device_codes
+       (device_code, user_code, client_id, scope, issued_at, expires_at, interval_secs, user_id, authorized, denied, effective_issuer, last_poll_time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      deviceCode.deviceCode,
+      deviceCode.userCode.toUpperCase(),
+      deviceCode.clientId,
+      deviceCode.scope ?? null,
+      deviceCode.issuedAt,
+      deviceCode.expiresAt,
+      deviceCode.interval,
+      deviceCode.userId ?? null,
+      deviceCode.authorized ? 1 : 0,
+      deviceCode.denied ? 1 : 0,
+      deviceCode.effectiveIssuer ?? null,
+      deviceCode.lastPollTime ?? null
+    )
+  }
+
+  async getDeviceCode(deviceCode: string): Promise<OAuthDeviceCode | null> {
+    const row = this.sql.exec<DeviceCodeRow>(
+      'SELECT * FROM device_codes WHERE device_code = ?',
+      deviceCode
+    ).toArray()[0] ?? null
+    return row ? this.rowToDeviceCode(row) : null
+  }
+
+  async getDeviceCodeByUserCode(userCode: string): Promise<OAuthDeviceCode | null> {
+    const row = this.sql.exec<DeviceCodeRow>(
+      'SELECT * FROM device_codes WHERE user_code = ?',
+      userCode.toUpperCase()
+    ).toArray()[0] ?? null
+    return row ? this.rowToDeviceCode(row) : null
+  }
+
+  async updateDeviceCode(deviceCode: OAuthDeviceCode): Promise<void> {
+    this.sql.exec(
+      `UPDATE device_codes SET
+       user_id = ?, authorized = ?, denied = ?, last_poll_time = ?
+       WHERE device_code = ?`,
+      deviceCode.userId ?? null,
+      deviceCode.authorized ? 1 : 0,
+      deviceCode.denied ? 1 : 0,
+      deviceCode.lastPollTime ?? null,
+      deviceCode.deviceCode
+    )
+  }
+
+  async deleteDeviceCode(deviceCode: string): Promise<void> {
+    this.sql.exec('DELETE FROM device_codes WHERE device_code = ?', deviceCode)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // Signing Key Operations (for JWT signing)
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -657,6 +735,23 @@ export class DOSQLiteStorage implements OAuthStorage {
       ...(row.revoked && { revoked: row.revoked === 1 }),
     }
   }
+
+  private rowToDeviceCode(row: DeviceCodeRow): OAuthDeviceCode {
+    return {
+      deviceCode: row.device_code,
+      userCode: row.user_code,
+      clientId: row.client_id,
+      ...(row.scope && { scope: row.scope }),
+      issuedAt: row.issued_at,
+      expiresAt: row.expires_at,
+      interval: row.interval_secs,
+      ...(row.user_id && { userId: row.user_id }),
+      ...(row.authorized && { authorized: row.authorized === 1 }),
+      ...(row.denied && { denied: row.denied === 1 }),
+      ...(row.effective_issuer && { effectiveIssuer: row.effective_issuer }),
+      ...(row.last_poll_time && { lastPollTime: row.last_poll_time }),
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -746,6 +841,21 @@ interface GrantRow {
   created_at: number
   last_used_at: number | null
   revoked: number
+}
+
+interface DeviceCodeRow {
+  device_code: string
+  user_code: string
+  client_id: string
+  scope: string | null
+  issued_at: number
+  expires_at: number
+  interval_secs: number
+  user_id: string | null
+  authorized: number
+  denied: number
+  effective_issuer: string | null
+  last_poll_time: number | null
 }
 
 export interface SerializedSigningKeyRow {
