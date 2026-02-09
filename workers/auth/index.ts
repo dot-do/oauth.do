@@ -21,13 +21,22 @@ import * as jose from 'jose'
 // Types
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * RPC interface for the OAuth worker service binding.
+ * Methods match the RPC entrypoints on OAuthWorker.
+ */
+interface OAuthRPC {
+  validateApiKey(apiKey: string): Promise<{ valid: boolean; id?: string; name?: string; organization_id?: string; permissions?: string[]; error?: string }>
+  fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
+}
+
 interface Env {
   WORKOS_CLIENT_ID: string
   WORKOS_API_KEY?: string
   ADMIN_TOKEN?: string
   ALLOWED_ORIGINS?: string
   // RPC binding to OAuth worker for API key verification
-  OAUTH?: Fetcher
+  OAUTH?: OAuthRPC
 }
 
 /**
@@ -319,16 +328,20 @@ async function verifyApiKey(key: string, env: Env): Promise<VerifyResult> {
   // If we have an OAuth worker binding, use RPC to verify
   if (env.OAUTH) {
     try {
-      const response = await env.OAUTH.fetch('http://oauth/verify-api-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key }),
-      })
-      const result = await response.json()
-      if (!isVerifyResult(result)) {
-        return { valid: false, error: 'Invalid response from API key verification service' }
+      const result = await env.OAUTH.validateApiKey(key)
+      if (!result.valid) {
+        return { valid: false, error: result.error || 'Invalid API key' }
       }
-      return result
+      return {
+        valid: true,
+        user: {
+          id: result.id || key,
+          name: result.name,
+          organizationId: result.organization_id,
+          org: result.organization_id,
+          permissions: result.permissions,
+        },
+      }
     } catch {
       return { valid: false, error: 'API key verification service unavailable' }
     }

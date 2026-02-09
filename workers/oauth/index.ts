@@ -441,4 +441,37 @@ export default class OAuthWorker extends WorkerEntrypoint<Env> {
   async validateApiKey(apiKey: string): Promise<ApiKeyValidationResult> {
     return validateWorkosApiKey(apiKey, this.env.WORKOS_API_KEY)
   }
+
+  /**
+   * Initiate login flow via Workers RPC
+   *
+   * Returns the redirect Response from the OAuth Durable Object's /login handler.
+   *
+   * @param returnTo - URL to redirect to after successful login
+   * @returns Redirect Response (302) to the upstream auth provider
+   */
+  async login(returnTo: string): Promise<Response> {
+    const stub = getOAuthDO(this.env)
+    const url = new URL('/login', 'https://oauth.do')
+    url.searchParams.set('returnTo', returnTo)
+    return stub.fetch(new Request(url.toString(), {
+      headers: { 'Accept': '*/*' },
+      redirect: 'manual',
+    }))
+  }
+
+  /**
+   * Exchange an authorization code for tokens via Workers RPC
+   *
+   * @param code - The authorization code from the callback
+   * @returns Exchange result with tokens or error
+   */
+  async exchange(code: string): Promise<Response> {
+    const stub = getOAuthDO(this.env)
+    return stub.fetch(new Request('https://oauth.do/exchange', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }))
+  }
 }
