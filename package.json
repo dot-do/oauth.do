@@ -100,8 +100,10 @@
   },
   "dependencies": {
     "@dotdo/oauth": "^0.1.6",
-    "keytar": "^7.9.0",
     "open": "^10.1.0"
+  },
+  "optionalDependencies": {
+    "keytar": "^7.9.0"
   },
   "peerDependencies": {
     "@dotdo/types": ">=0.1.0",
