@@ -12,6 +12,21 @@ import type { DevModeConfig, TestHelpers } from './dev.js'
 import { SigningKeyManager, signAccessToken } from './jwt-signing.js'
 
 /**
+ * Compute the refresh token expiresAt timestamp in milliseconds.
+ *
+ * Centralizes the TTL → millisecond-epoch calculation so every code path
+ * uses the same formula.  Returns `undefined` when refreshTokenTtl is 0
+ * (meaning "never expire").
+ *
+ * @param refreshTokenTtl - TTL in **seconds** (e.g. 2592000 for 30 days)
+ * @param now             - Current time in milliseconds (default: Date.now())
+ */
+export function computeRefreshTokenExpiry(refreshTokenTtl: number, now: number = Date.now()): number | undefined {
+  if (refreshTokenTtl <= 0) return undefined
+  return now + refreshTokenTtl * 1000
+}
+
+/**
  * Shared context available to all route modules.
  *
  * Created once in createOAuth21Server and passed to each route factory.

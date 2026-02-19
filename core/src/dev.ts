@@ -11,6 +11,7 @@
 import type { OAuthUser, OAuthAccessToken, OAuthRefreshToken } from './types.js'
 import type { OAuthStorage } from './storage.js'
 import { generateToken, generateAuthorizationCode } from './pkce.js'
+import { computeRefreshTokenExpiry } from './helpers.js'
 
 /**
  * Test user configuration
@@ -157,13 +158,14 @@ export function createTestHelpers(
         expiresAt: now + accessTokenTtl * 1000,
       }
 
+      const refreshExpiresAt = computeRefreshTokenExpiry(refreshTokenTtl, now)
       const refreshTokenObj: OAuthRefreshToken = {
         token: refreshToken,
         userId,
         clientId,
         scope,
         issuedAt: now,
-        expiresAt: now + refreshTokenTtl * 1000,
+        ...(refreshExpiresAt !== undefined && { expiresAt: refreshExpiresAt }),
       }
 
       await storage.saveAccessToken(accessTokenObj)

@@ -129,6 +129,10 @@ export class OAuthDO extends DurableObject<OAuthDOEnv> {
       useJwtAccessTokens: true,
       allowedOrigins,
       debug: false,
+      // Explicit TTLs — do not rely on defaults
+      accessTokenTtl: 3600, // 1 hour
+      refreshTokenTtl: 2592000, // 30 days (in seconds)
+      authCodeTtl: 600, // 10 minutes
     })
 
     // Schedule initial cleanup alarm if not already set

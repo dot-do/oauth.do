@@ -13,6 +13,7 @@ import type { OAuthStorage } from '../storage.js'
 import type { OAuthClient, OAuthError, TokenResponse } from '../types.js'
 import { generateToken, verifyCodeChallenge, verifyClientSecret } from '../pkce.js'
 import { signAccessToken, type AccessTokenClaims } from '../jwt-signing.js'
+import { computeRefreshTokenExpiry } from '../helpers.js'
 
 /**
  * Result of client authentication
@@ -260,13 +261,14 @@ export async function handleAuthorizationCodeGrant(
     })
   }
 
+  const refreshExpiresAt = computeRefreshTokenExpiry(refreshTokenTtl, now)
   await storage.saveRefreshToken({
     token: refreshToken,
     clientId: authCode.clientId,
     userId: authCode.userId,
     ...(authCode.scope !== undefined && { scope: authCode.scope }),
     issuedAt: now,
-    ...(refreshTokenTtl > 0 && { expiresAt: now + refreshTokenTtl * 1000 }),
+    ...(refreshExpiresAt !== undefined && { expiresAt: refreshExpiresAt }),
   })
 
   // Save grant
@@ -368,6 +370,7 @@ export async function handleRefreshTokenGrant(
   }
 
   // Rotate refresh token
+  const refreshExpiresAt = computeRefreshTokenExpiry(refreshTokenTtl, now)
   await storage.revokeRefreshToken(refresh_token)
   await storage.saveRefreshToken({
     token: newRefreshToken,
@@ -375,7 +378,7 @@ export async function handleRefreshTokenGrant(
     userId: storedRefresh.userId,
     ...(storedRefresh.scope !== undefined && { scope: storedRefresh.scope }),
     issuedAt: now,
-    ...(refreshTokenTtl > 0 && { expiresAt: now + refreshTokenTtl * 1000 }),
+    ...(refreshExpiresAt !== undefined && { expiresAt: refreshExpiresAt }),
   })
 
   // Update grant last used
@@ -579,13 +582,14 @@ export async function handleDeviceCodeGrant(
     })
   }
 
+  const refreshExpiresAt = computeRefreshTokenExpiry(refreshTokenTtl, now)
   await storage.saveRefreshToken({
     token: refreshToken,
     clientId: deviceCodeData.clientId,
     userId: deviceCodeData.userId,
     ...(deviceCodeData.scope && { scope: deviceCodeData.scope }),
     issuedAt: now,
-    ...(refreshTokenTtl > 0 && { expiresAt: now + refreshTokenTtl * 1000 }),
+    ...(refreshExpiresAt !== undefined && { expiresAt: refreshExpiresAt }),
   })
 
   // Save grant

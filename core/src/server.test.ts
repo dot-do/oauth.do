@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { createOAuth21Server, MemoryOAuthStorage, generateCodeChallenge, generateCodeVerifier } from './index'
+import { createOAuth21Server, MemoryOAuthStorage, generateCodeChallenge, generateCodeVerifier, computeRefreshTokenExpiry } from './index'
 
 describe('OAuth 2.1 Server E2E Flow', () => {
   let server: ReturnType<typeof createOAuth21Server>
@@ -1507,6 +1507,216 @@ describe('OAuth 2.1 Server E2E Flow', () => {
         const error = await secondTokenResponse.json()
         expect(error.error).toBe('invalid_grant')
       })
+    })
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Refresh Token Expiry (Bug Fix Verification)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('Refresh Token Expiry', () => {
+    let clientId: string
+    let codeVerifier: string
+    let codeChallenge: string
+
+    beforeEach(async () => {
+      // Register a client
+      const regResponse = await server.request('/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: 'Expiry Test Client',
+          redirect_uris: ['https://example.com/callback'],
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          token_endpoint_auth_method: 'none'
+        })
+      })
+      const client = await regResponse.json()
+      clientId = client.client_id
+
+      // Generate PKCE pair
+      codeVerifier = generateCodeVerifier()
+      codeChallenge = await generateCodeChallenge(codeVerifier)
+    })
+
+    it('should set refresh token expiresAt to ~30 days from now (authorization_code grant)', async () => {
+      const beforeToken = Date.now()
+
+      // Complete auth code flow
+      const loginResponse = await server.request('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          email: 'test@example.com',
+          password: 'test123',
+          client_id: clientId,
+          redirect_uri: 'https://example.com/callback',
+          code_challenge: codeChallenge,
+          code_challenge_method: 'S256',
+          state: 'expiry-test',
+          scope: 'openid profile',
+          response_type: 'code'
+        }).toString()
+      })
+
+      const location = loginResponse.headers.get('location')!
+      const code = new URL(location).searchParams.get('code')!
+
+      const tokenResponse = await server.request('/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          client_id: clientId,
+          redirect_uri: 'https://example.com/callback',
+          code_verifier: codeVerifier
+        }).toString()
+      })
+
+      expect(tokenResponse.status).toBe(200)
+      const tokens = await tokenResponse.json()
+      const afterToken = Date.now()
+
+      // Inspect the refresh token in storage to verify expiresAt
+      const storedRefresh = await storage.getRefreshToken(tokens.refresh_token)
+      expect(storedRefresh).not.toBeNull()
+      expect(storedRefresh!.expiresAt).toBeDefined()
+
+      // Default refreshTokenTtl = 2592000 seconds = 30 days
+      const expectedTtlMs = 2592000 * 1000
+      const expectedMinExpiry = beforeToken + expectedTtlMs
+      const expectedMaxExpiry = afterToken + expectedTtlMs
+
+      // The expiresAt should be within [beforeToken + 30d, afterToken + 30d]
+      expect(storedRefresh!.expiresAt).toBeGreaterThanOrEqual(expectedMinExpiry)
+      expect(storedRefresh!.expiresAt).toBeLessThanOrEqual(expectedMaxExpiry)
+
+      // Sanity check: should NOT be 5 days (the bug value)
+      const fiveDaysMs = 5 * 24 * 60 * 60 * 1000
+      expect(storedRefresh!.expiresAt! - beforeToken).toBeGreaterThan(fiveDaysMs)
+
+      // Should be approximately 30 days (within 10 seconds tolerance)
+      const actualTtlMs = storedRefresh!.expiresAt! - storedRefresh!.issuedAt
+      expect(Math.abs(actualTtlMs - expectedTtlMs)).toBeLessThan(10000)
+    })
+
+    it('should set refresh token expiresAt to ~30 days after rotation (refresh_token grant)', async () => {
+      // First, get tokens via auth code flow
+      const loginResponse = await server.request('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          email: 'test@example.com',
+          password: 'test123',
+          client_id: clientId,
+          redirect_uri: 'https://example.com/callback',
+          code_challenge: codeChallenge,
+          code_challenge_method: 'S256',
+          state: 'rotation-test',
+          scope: 'openid',
+          response_type: 'code'
+        }).toString()
+      })
+
+      const location = loginResponse.headers.get('location')!
+      const code = new URL(location).searchParams.get('code')!
+
+      const tokenResponse = await server.request('/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          client_id: clientId,
+          redirect_uri: 'https://example.com/callback',
+          code_verifier: codeVerifier
+        }).toString()
+      })
+
+      const tokens = await tokenResponse.json()
+
+      // Now rotate the refresh token
+      const beforeRefresh = Date.now()
+      const refreshResponse = await server.request('/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: tokens.refresh_token,
+          client_id: clientId
+        }).toString()
+      })
+
+      expect(refreshResponse.status).toBe(200)
+      const newTokens = await refreshResponse.json()
+      const afterRefresh = Date.now()
+
+      // The rotated refresh token should also have ~30 day expiry
+      const storedNewRefresh = await storage.getRefreshToken(newTokens.refresh_token)
+      expect(storedNewRefresh).not.toBeNull()
+      expect(storedNewRefresh!.expiresAt).toBeDefined()
+
+      const expectedTtlMs = 2592000 * 1000
+      expect(storedNewRefresh!.expiresAt).toBeGreaterThanOrEqual(beforeRefresh + expectedTtlMs)
+      expect(storedNewRefresh!.expiresAt).toBeLessThanOrEqual(afterRefresh + expectedTtlMs)
+
+      // The old refresh token should be revoked
+      const storedOldRefresh = await storage.getRefreshToken(tokens.refresh_token)
+      expect(storedOldRefresh?.revoked).toBe(true)
+    })
+
+    it('should set refresh token expiresAt to ~30 days (test helper)', async () => {
+      const beforeToken = Date.now()
+      await server.testHelpers!.createUser({ id: 'expiry-user', email: 'expiry@example.com' })
+      const tokens = await server.testHelpers!.getAccessToken('expiry-user', 'test-client', 'openid')
+      const afterToken = Date.now()
+
+      const storedRefresh = await storage.getRefreshToken(tokens.refreshToken)
+      expect(storedRefresh).not.toBeNull()
+      expect(storedRefresh!.expiresAt).toBeDefined()
+
+      const expectedTtlMs = 2592000 * 1000
+      expect(storedRefresh!.expiresAt).toBeGreaterThanOrEqual(beforeToken + expectedTtlMs)
+      expect(storedRefresh!.expiresAt).toBeLessThanOrEqual(afterToken + expectedTtlMs)
+    })
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // computeRefreshTokenExpiry helper unit tests
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('computeRefreshTokenExpiry', () => {
+    it('returns now + ttl*1000 for positive TTL', () => {
+      const now = 1700000000000
+      const result = computeRefreshTokenExpiry(2592000, now)
+      expect(result).toBe(now + 2592000 * 1000)
+    })
+
+    it('returns undefined for TTL of 0', () => {
+      const result = computeRefreshTokenExpiry(0, 1700000000000)
+      expect(result).toBeUndefined()
+    })
+
+    it('returns undefined for negative TTL', () => {
+      const result = computeRefreshTokenExpiry(-1, 1700000000000)
+      expect(result).toBeUndefined()
+    })
+
+    it('computes correct 30-day expiry in milliseconds', () => {
+      const now = Date.now()
+      const result = computeRefreshTokenExpiry(2592000, now)!
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000
+      expect(result - now).toBe(thirtyDaysMs)
+    })
+
+    it('uses Date.now() when no now argument is given', () => {
+      const before = Date.now()
+      const result = computeRefreshTokenExpiry(3600)!
+      const after = Date.now()
+      expect(result).toBeGreaterThanOrEqual(before + 3600 * 1000)
+      expect(result).toBeLessThanOrEqual(after + 3600 * 1000)
     })
   })
 })

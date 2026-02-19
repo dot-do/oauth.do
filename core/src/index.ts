@@ -63,6 +63,10 @@ export type { SqlStorage, SqlStorageResult, OAuthUserWithStripe, SerializedSigni
 // Collections-based Storage (preferred - no migrations needed)
 export { CollectionsOAuthStorage } from './storage-collections.js'
 
+// Helpers
+export { computeRefreshTokenExpiry } from './helpers.js'
+export type { ServerContext } from './helpers.js'
+
 // PKCE
 export {
   generateCodeVerifier,

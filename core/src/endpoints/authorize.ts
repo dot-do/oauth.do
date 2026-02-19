@@ -19,6 +19,7 @@ import { generateAuthorizationCode, generateState, generateToken } from '../pkce
 import { redirectWithError } from '../utils/html.js'
 import { buildUpstreamAuthUrl, exchangeUpstreamCode, getOrCreateUser } from '../utils/upstream.js'
 import { generateConsentScreenHtml, consentCoversScopes } from '../consent.js'
+import { computeRefreshTokenExpiry } from '../helpers.js'
 
 /**
  * Configuration for authorization handlers
@@ -592,13 +593,14 @@ export function createCallbackHandler(config: AuthorizeHandlerConfig) {
         // Generate refresh token for silent refresh
         const refreshToken = generateToken(64)
         const now = Date.now()
+        const refreshExpiresAt = computeRefreshTokenExpiry(refreshTokenTtl, now)
         await storage.saveRefreshToken({
           token: refreshToken,
           clientId: 'first-party',
           userId: user.id,
           scope: 'openid profile email',
           issuedAt: now,
-          ...(refreshTokenTtl > 0 && { expiresAt: now + refreshTokenTtl * 1000 }),
+          ...(refreshExpiresAt !== undefined && { expiresAt: refreshExpiresAt }),
         })
 
         // Generate a one-time code and store both tokens (60 second TTL)
