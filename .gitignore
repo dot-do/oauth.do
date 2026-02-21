@@ -5,3 +5,4 @@ node_modules
 coverage
 .turbo
 .wrangler
+.dev.vars

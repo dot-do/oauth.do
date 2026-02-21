@@ -23,13 +23,15 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.mts"
   },
   "dependencies": {
     "@tsndr/cloudflare-worker-jwt": "^3.2.1",
     "jose": "^5.2.0"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.12.14",
     "@cloudflare/workers-types": "^4.20250121.0",
     "hono": "^4.0.0",
     "typescript": "^5.7.0",

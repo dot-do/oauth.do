@@ -429,9 +429,9 @@ describe('Login Module', () => {
 			expect(storageWithoutTokenData.setToken).toHaveBeenCalledWith(mockAccessToken)
 		})
 
-		it('should refresh token before expiry (5 minute buffer)', async () => {
-			// Token that expires in 4 minutes (within 5-minute buffer)
-			const nearExpiry = Date.now() + 4 * 60 * 1000
+		it('should refresh token before expiry (30 second buffer)', async () => {
+			// Token that expires in 20 seconds (within 30-second buffer)
+			const nearExpiry = Date.now() + 20 * 1000
 			const tokenData: StoredTokenData = {
 				accessToken: mockAccessToken,
 				refreshToken: mockRefreshToken,
@@ -451,7 +451,7 @@ describe('Login Module', () => {
 
 			const result = await ensureLoggedIn({ storage: mockStorage })
 
-			// Should have refreshed because token is within 5-minute buffer
+			// Should have refreshed because token is within 30-second buffer
 			expect(refreshAccessToken).toHaveBeenCalledWith(mockRefreshToken)
 			expect(result.token).toBe(mockNewAccessToken)
 		})

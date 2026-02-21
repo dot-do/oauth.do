@@ -168,7 +168,7 @@ async function loginCommand() {
 
 		// Step 4: Save FULL token data (including refresh_token for auto-refresh)
 		const expiresAt = tokenResponse.expires_in ? Date.now() + tokenResponse.expires_in * 1000 : undefined
-		await storage.setTokenData({
+		await storage.setTokenData!({
 			accessToken: tokenResponse.access_token,
 			refreshToken: tokenResponse.refresh_token,
 			expiresAt,
@@ -191,7 +191,7 @@ async function loginCommand() {
 		// Show storage info
 		const fileStorage = storage as SecureFileTokenStorage
 		if (typeof fileStorage.getStorageInfo === 'function') {
-			const storageInfo = await fileStorage.getStorageInfo()
+			await fileStorage.getStorageInfo()
 			console.log(`\n${colors.dim}Token stored in: ${colors.green}~/.oauth.do/token${colors.reset}${colors.reset}`)
 		}
 	} catch (error) {
@@ -293,7 +293,7 @@ async function statusCommand() {
 		// Get storage info
 		const fileStorage = storage as SecureFileTokenStorage
 		if (typeof fileStorage.getStorageInfo === 'function') {
-			const storageInfo = await fileStorage.getStorageInfo()
+			await fileStorage.getStorageInfo()
 			console.log(`${colors.cyan}Storage:${colors.reset} ${colors.green}Secure File${colors.reset}`)
 			console.log(`  ${colors.dim}Using ~/.oauth.do/token with 0600 permissions${colors.reset}`)
 		}

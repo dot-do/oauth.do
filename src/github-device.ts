@@ -57,13 +57,6 @@ export interface GitHubUser {
 	avatarUrl: string
 }
 
-type GitHubTokenError =
-	| 'authorization_pending'
-	| 'slow_down'
-	| 'expired_token'
-	| 'access_denied'
-	| 'unknown'
-
 /**
  * Start GitHub Device Flow
  *

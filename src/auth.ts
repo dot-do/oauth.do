@@ -1,7 +1,7 @@
 import { getConfig } from './config.js'
 import { getEnv } from './utils.js'
 import { isUser, isLoginResponse, isTokenResponse, ValidationError } from './guards.js'
-import type { User, AuthResult, TokenResponse, StoredTokenData } from './types.js'
+import type { AuthResult, TokenResponse, StoredTokenData } from './types.js'
 
 /**
  * Resolve a secret that could be a plain string or a secrets store binding
@@ -142,7 +142,7 @@ export async function logout(token?: string): Promise<void> {
  * 4. Stored token (keychain/secure file) - with automatic refresh if expired
  *
  * Automatic token refresh:
- * - Tokens are refreshed when within 5 minutes of expiry
+ * - Tokens are refreshed when within 30 seconds of expiry
  * - Refresh happens transparently using stored refresh_token
  * - If refresh fails, falls back to re-authentication flow
  *

@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "auth",
+  "account_id": "b6641681fe423910342b9ffa1364c76d",
+  "main": "index.ts",
+  "compatibility_date": "2026-01-25",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "vars": {
+    "WORKOS_CLIENT_ID": "client_01JQYTRXK9ZPD8JPJTKDCRB656"
+  }
+
+  // No OAUTH service binding — the auth worker gracefully falls back
+  // to direct WorkOS API calls when OAUTH is not available.
+  // Secrets (ADMIN_TOKEN, WORKOS_API_KEY) come from .dev.vars.
+}

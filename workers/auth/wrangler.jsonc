@@ -21,5 +21,11 @@
       "binding": "OAUTH",
       "service": "oauth"
     }
+  ],
+
+  // Migrations: IdentityDO was created via dashboard, needs formal migration history to delete
+  "migrations": [
+    { "tag": "v1", "new_classes": ["IdentityDO"] },
+    { "tag": "v2", "deleted_classes": ["IdentityDO"] }
   ]
 }

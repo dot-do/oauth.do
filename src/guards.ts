@@ -8,7 +8,6 @@
  */
 
 import type { User, TokenResponse, DeviceAuthorizationResponse, TokenError, StoredTokenData } from './types.js'
-import type { GitHubTokenResponse, GitHubUser } from './github-device.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
@@ -26,13 +25,6 @@ function isNumber(value: unknown): value is number {
   return typeof value === 'number' && !Number.isNaN(value)
 }
 
-function isOptionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === 'string'
-}
-
-function isOptionalNumber(value: unknown): value is number | undefined {
-  return value === undefined || (typeof value === 'number' && !Number.isNaN(value))
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Validation Error
@@ -97,13 +89,16 @@ export function isLoginResponse(data: unknown): data is { user: User; token: str
 /**
  * Check if data is a valid TokenResponse (OAuth 2.0 wire format)
  *
- * Required: access_token (string), token_type (string)
- * Optional: expires_in (number), refresh_token (string), scope (string), user (User)
+ * Required: access_token (string)
+ * Optional: token_type (string), expires_in (number), refresh_token (string), scope (string), user (User)
+ *
+ * Note: token_type is technically required by RFC 6749 but WorkOS device flow
+ * responses omit it, so we treat it as optional for compatibility.
  */
 export function isTokenResponse(data: unknown): data is TokenResponse {
   if (!isObject(data)) return false
   if (!isString(data.access_token)) return false
-  if (!isString(data.token_type)) return false
+  if (data.token_type !== undefined && !isString(data.token_type)) return false
   if (data.expires_in !== undefined && !isNumber(data.expires_in)) return false
   if (data.refresh_token !== undefined && !isString(data.refresh_token)) return false
   if (data.scope !== undefined && !isString(data.scope)) return false

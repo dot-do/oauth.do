@@ -247,10 +247,11 @@ describe('Auth Worker', () => {
 
     it('verifies API key via OAuth worker RPC', async () => {
       const mockOAuth = {
-        fetch: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        validateApiKey: vi.fn().mockResolvedValue({
           valid: true,
-          user: { id: 'api_user', email: 'api@example.com' },
-        }))),
+          id: 'api_user',
+          name: 'API User',
+        }),
       }
 
       const jose = await import('jose')

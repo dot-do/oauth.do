@@ -6,6 +6,7 @@ export default defineConfig({
 		globals: true,
 		environment: 'jsdom',
 		include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'core/src/**/*.test.ts', 'workers/**/*.test.ts'],
+		exclude: ['**/node_modules/**', '**/dist/**', '**/test-integration/**'],
 		setupFiles: [resolve(__dirname, 'tests/setup.ts')],
 		pool: 'forks',
 		poolOptions: {

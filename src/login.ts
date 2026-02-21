@@ -19,6 +19,29 @@ function debug(...args: unknown[]): void {
 	}
 }
 
+/**
+ * Extract expiration timestamp from a JWT access token's `exp` claim.
+ * Returns milliseconds since epoch, or undefined if the token is not a valid JWT.
+ */
+function getExpiresAtFromJwt(accessToken: string): number | undefined {
+	try {
+		const parts = accessToken.split('.')
+		if (parts.length !== 3 || !parts[1]) return undefined
+		// Base64url decode the payload
+		const payload = parts[1]!.replace(/-/g, '+').replace(/_/g, '/')
+		const decoded = typeof atob === 'function'
+			? atob(payload)
+			: Buffer.from(payload, 'base64').toString('utf-8')
+		const claims = JSON.parse(decoded)
+		if (typeof claims.exp === 'number') {
+			return claims.exp * 1000 // Convert seconds to milliseconds
+		}
+	} catch {
+		// Not a valid JWT — ignore
+	}
+	return undefined
+}
+
 export type { OAuthProvider } from './device.js'
 
 export interface LoginOptions {
@@ -43,8 +66,9 @@ export interface LoginResult {
 	isNewLogin: boolean
 }
 
-// Buffer time before expiration to trigger refresh (5 minutes)
-const REFRESH_BUFFER_MS = 5 * 60 * 1000
+// Buffer time before expiration to trigger refresh (30 seconds)
+// WorkOS access tokens have a 5-minute TTL, so 5 minutes was too aggressive
+const REFRESH_BUFFER_MS = 30 * 1000
 
 // Singleton promise for login/refresh operations
 // Prevents multiple concurrent login attempts (race condition)
@@ -97,9 +121,11 @@ async function doRefresh(
 				expiresIn: newTokens.expires_in,
 			})
 
-			// Calculate new expiration time
-			const expiresAt = newTokens.expires_in ? Date.now() + newTokens.expires_in * 1000 : undefined
-			debug('New expiresAt:', expiresAt ? new Date(expiresAt).toISOString() : 'NOT SET (no expires_in)')
+			// Calculate new expiration time — prefer expires_in, fall back to JWT exp claim
+			const expiresAt = newTokens.expires_in
+				? Date.now() + newTokens.expires_in * 1000
+				: getExpiresAtFromJwt(newTokens.access_token)
+			debug('New expiresAt:', expiresAt ? new Date(expiresAt).toISOString() : 'NOT SET', newTokens.expires_in ? '(from expires_in)' : '(from JWT exp)')
 
 			// Store new token data
 			const newData: StoredTokenData = {
@@ -184,9 +210,11 @@ async function doDeviceLogin(options: LoginOptions): Promise<LoginResult> {
 				expiresIn: tokenResponse.expires_in,
 			})
 
-			// Calculate expiration time
-			const expiresAt = tokenResponse.expires_in ? Date.now() + tokenResponse.expires_in * 1000 : undefined
-			debug('Calculated expiresAt:', expiresAt ? new Date(expiresAt).toISOString() : 'NOT SET')
+			// Calculate expiration time — prefer expires_in, fall back to JWT exp claim
+			const expiresAt = tokenResponse.expires_in
+				? Date.now() + tokenResponse.expires_in * 1000
+				: getExpiresAtFromJwt(tokenResponse.access_token)
+			debug('Calculated expiresAt:', expiresAt ? new Date(expiresAt).toISOString() : 'NOT SET', tokenResponse.expires_in ? '(from expires_in)' : '(from JWT exp)')
 
 			// Store full token data including refresh token
 			const newData: StoredTokenData = {

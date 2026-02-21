@@ -28,7 +28,8 @@ const DEFAULT_WORKOS_CLIENT_ID = 'client_01JQYTRXK9ZPD8JPJTKDCRB656'
 function getWorkosClientId(): string {
   try {
     // Cloudflare Workers use `env` from cloudflare:workers
-    const { env } = require('cloudflare:workers') as { env: { WORKOS_CLIENT_ID?: string } }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { env } = (globalThis as { require?: (id: string) => unknown }).require?.('cloudflare:workers') as { env: { WORKOS_CLIENT_ID?: string } } ?? {}
     return env?.WORKOS_CLIENT_ID || DEFAULT_WORKOS_CLIENT_ID
   } catch {
     return DEFAULT_WORKOS_CLIENT_ID

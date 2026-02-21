@@ -471,7 +471,8 @@ app.get('/verify', async (c) => {
 // Get user from token
 app.get('/me', async (c) => {
   const auth = c.req.header('Authorization')
-  const cookie = c.req.cookie('auth')
+  const cookieHeader = c.req.header('Cookie') || ''
+  const cookie = cookieHeader.match(/(?:^|;\s*)auth=([^;]+)/)?.[1]
   const token = auth?.startsWith('Bearer ') ? auth.slice(7) : cookie
 
   if (!token) {

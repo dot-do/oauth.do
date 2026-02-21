@@ -1,6 +1,6 @@
 import { getConfig } from './config.js'
 import { isDeviceAuthorizationResponse, isTokenResponse, isErrorResponse, toTokenError, ValidationError } from './guards.js'
-import type { DeviceAuthorizationResponse, TokenResponse, TokenError } from './types.js'
+import type { DeviceAuthorizationResponse, TokenResponse } from './types.js'
 
 /**
  * OAuth provider options for direct provider login

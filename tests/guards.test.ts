@@ -143,8 +143,19 @@ describe('isTokenResponse', () => {
 		expect(isTokenResponse({ token_type: 'Bearer' })).toBe(false)
 	})
 
-	it('should reject missing token_type', () => {
-		expect(isTokenResponse({ access_token: 'tok' })).toBe(false)
+	it('should accept missing token_type (WorkOS device flow omits it)', () => {
+		expect(isTokenResponse({ access_token: 'tok' })).toBe(true)
+	})
+
+	it('should accept WorkOS device flow response shape', () => {
+		expect(
+			isTokenResponse({
+				access_token: 'eyJ...',
+				refresh_token: 'vb9hATCAYg0w...',
+				authentication_method: 'GoogleOAuth',
+				user: { id: 'user_01K7DHQ7BPSM64FWS1XV0ZVZZ1', email: 'test@example.com' },
+			})
+		).toBe(true)
 	})
 
 	it('should reject non-number expires_in', () => {
