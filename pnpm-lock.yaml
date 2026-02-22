@@ -121,8 +121,8 @@ importers:
   workers/oauth:
     dependencies:
       '@dotdo/oauth':
-        specifier: ^0.1.7
-        version: 0.1.7(@cloudflare/workers-types@4.20260128.0)(hono@4.11.5)(typescript@5.9.3)
+        specifier: workspace:*
+        version: link:../../core
       '@mdxui/auth':
         specifier: ^1.5.2
         version: 1.5.2(@tanstack/react-query@5.90.20(react@19.2.4))(@types/react-dom@18.3.7(@types/react@18.3.27))(@types/react@18.3.27)(react-dom@18.3.1(react@19.2.4))(react@19.2.4)
@@ -410,11 +410,6 @@ packages:
 
   '@dotdo/oauth@0.1.6':
     resolution: {integrity: sha512-C4ubQlVDxLFBiJxvuWrx/9aQJpKoYaA7MTmDcv3ymp530d2BHRVp1f2PkFcPqVjiILh+/Itx7gaX7PK0Q/AVxQ==}
-    peerDependencies:
-      hono: '>=4.0.0'
-
-  '@dotdo/oauth@0.1.7':
-    resolution: {integrity: sha512-I0NPrpxcuGvogOH5jPtyUbCQPdcqnrwNPTSqj4hw+UFicHMCaw5K/NP8PsASm1mWMZH3RcTWljgJDYA5pL0+Bg==}
     peerDependencies:
       hono: '>=4.0.0'
 
@@ -4921,14 +4916,6 @@ snapshots:
   '@dotdo/oauth@0.1.6(hono@4.11.5)':
     dependencies:
       hono: 4.11.5
-
-  '@dotdo/oauth@0.1.7(@cloudflare/workers-types@4.20260128.0)(hono@4.11.5)(typescript@5.9.3)':
-    dependencies:
-      '@dotdo/collections': 0.1.1(@cloudflare/workers-types@4.20260128.0)(typescript@5.9.3)
-      hono: 4.11.5
-    transitivePeerDependencies:
-      - '@cloudflare/workers-types'
-      - typescript
 
   '@dotdo/types@0.1.1(typescript@5.9.3)':
     optionalDependencies:

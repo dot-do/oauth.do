@@ -73,16 +73,16 @@ export function createRegisterHandler(config: RegisterHandlerConfig) {
       console.log('[OAuth] Client registration:', parsed)
     }
 
-    if (typeof parsed.client_name !== 'string' || !parsed.client_name) {
+    if (typeof parsed['client_name'] !== 'string' || !parsed['client_name']) {
       return c.json({ error: 'invalid_client_metadata', error_description: 'client_name is required' } as OAuthError, 400)
     }
 
-    if (!Array.isArray(parsed.redirect_uris) || parsed.redirect_uris.length === 0 || !parsed.redirect_uris.every((u: unknown) => typeof u === 'string')) {
+    if (!Array.isArray(parsed['redirect_uris']) || parsed['redirect_uris'].length === 0 || !parsed['redirect_uris'].every((u: unknown) => typeof u === 'string')) {
       return c.json({ error: 'invalid_client_metadata', error_description: 'redirect_uris is required and must be an array of strings' } as OAuthError, 400)
     }
 
     // Enforce HTTPS for redirect URIs in production
-    for (const uri of parsed.redirect_uris as string[]) {
+    for (const uri of parsed['redirect_uris'] as string[]) {
       const schemeErr = validateRedirectUriScheme(uri)
       if (schemeErr) {
         return c.json({ error: 'invalid_client_metadata', error_description: schemeErr } as OAuthError, 400)
@@ -97,12 +97,12 @@ export function createRegisterHandler(config: RegisterHandlerConfig) {
     const client: OAuthClient = {
       clientId,
       clientSecretHash,
-      clientName: parsed.client_name as string,
-      redirectUris: parsed.redirect_uris as string[],
-      grantTypes: (parsed.grant_types as OAuthClient['grantTypes']) || ['authorization_code', 'refresh_token'],
-      responseTypes: (parsed.response_types as OAuthClient['responseTypes']) || ['code'],
-      tokenEndpointAuthMethod: (parsed.token_endpoint_auth_method as OAuthClient['tokenEndpointAuthMethod']) || 'client_secret_basic',
-      ...(parsed.scope !== undefined && { scope: parsed.scope }),
+      clientName: parsed['client_name'] as string,
+      redirectUris: parsed['redirect_uris'] as string[],
+      grantTypes: (parsed['grant_types'] as OAuthClient['grantTypes']) || ['authorization_code', 'refresh_token'],
+      responseTypes: (parsed['response_types'] as OAuthClient['responseTypes']) || ['code'],
+      tokenEndpointAuthMethod: (parsed['token_endpoint_auth_method'] as OAuthClient['tokenEndpointAuthMethod']) || 'client_secret_basic',
+      ...(typeof parsed['scope'] === 'string' && { scope: parsed['scope'] }),
       createdAt: Date.now(),
     }
 

@@ -840,7 +840,7 @@ export function createExchangeHandler(config: AuthorizeHandlerConfig) {
     }
 
     const exchangeCode =
-      typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>).code === 'string'
+      typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>)['code'] === 'string'
         ? (body as { code: string }).code
         : undefined
 

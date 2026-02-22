@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@dotdo/oauth": "^0.1.7",
+    "@dotdo/oauth": "workspace:*",
     "@mdxui/auth": "^1.5.2",
     "@workos-inc/node": "^7.0.0",
     "hono": "^4.0.0"

@@ -8,7 +8,7 @@
  * @module core/guards
  */
 
-import type { StripeWebhookEvent, StripeWebhookEventType } from './stripe.js'
+import type { StripeWebhookEvent } from './stripe.js'
 import type { SerializedSigningKey } from './jwt-signing.js'
 import type { JWTHeader, JWTPayload } from './jwt.js'
 
@@ -78,11 +78,11 @@ const VALID_STRIPE_EVENT_TYPES = new Set<string>([
  */
 export function isStripeWebhookEvent(data: unknown): data is StripeWebhookEvent {
   if (!isObject(data)) return false
-  if (!isString(data.id)) return false
-  if (!isString(data.type)) return false
-  if (!VALID_STRIPE_EVENT_TYPES.has(data.type)) return false
-  if (!isObject(data.data)) return false
-  if (!isObject((data.data as Record<string, unknown>).object)) return false
+  if (!isString(data['id'])) return false
+  if (!isString(data['type'])) return false
+  if (!VALID_STRIPE_EVENT_TYPES.has(data['type'] as string)) return false
+  if (!isObject(data['data'])) return false
+  if (!isObject((data['data'] as Record<string, unknown>)['object'])) return false
   return true
 }
 
@@ -91,9 +91,9 @@ export function isStripeWebhookEvent(data: unknown): data is StripeWebhookEvent 
  */
 export function isStripeApiError(data: unknown): data is { error?: { message?: string } } {
   if (!isObject(data)) return false
-  if (data.error !== undefined) {
-    if (!isObject(data.error)) return false
-    if ((data.error as Record<string, unknown>).message !== undefined && !isString((data.error as Record<string, unknown>).message)) return false
+  if (data['error'] !== undefined) {
+    if (!isObject(data['error'])) return false
+    if ((data['error'] as Record<string, unknown>)['message'] !== undefined && !isString((data['error'] as Record<string, unknown>)['message'])) return false
   }
   return true
 }
@@ -110,9 +110,9 @@ export function isStripeApiError(data: unknown): data is { error?: { message?: s
  */
 export function isJWTHeader(data: unknown): data is JWTHeader {
   if (!isObject(data)) return false
-  if (!isString(data.alg)) return false
-  if (data.typ !== undefined && !isString(data.typ)) return false
-  if (data.kid !== undefined && !isString(data.kid)) return false
+  if (!isString(data['alg'])) return false
+  if (data['typ'] !== undefined && !isString(data['typ'])) return false
+  if (data['kid'] !== undefined && !isString(data['kid'])) return false
   return true
 }
 
@@ -123,16 +123,16 @@ export function isJWTHeader(data: unknown): data is JWTHeader {
  */
 export function isJWTPayload(data: unknown): data is JWTPayload {
   if (!isObject(data)) return false
-  if (data.iss !== undefined && !isString(data.iss)) return false
-  if (data.sub !== undefined && !isString(data.sub)) return false
-  if (data.exp !== undefined && !isNumber(data.exp)) return false
-  if (data.nbf !== undefined && !isNumber(data.nbf)) return false
-  if (data.iat !== undefined && !isNumber(data.iat)) return false
-  if (data.jti !== undefined && !isString(data.jti)) return false
+  if (data['iss'] !== undefined && !isString(data['iss'])) return false
+  if (data['sub'] !== undefined && !isString(data['sub'])) return false
+  if (data['exp'] !== undefined && !isNumber(data['exp'])) return false
+  if (data['nbf'] !== undefined && !isNumber(data['nbf'])) return false
+  if (data['iat'] !== undefined && !isNumber(data['iat'])) return false
+  if (data['jti'] !== undefined && !isString(data['jti'])) return false
   // aud can be string or string[]
-  if (data.aud !== undefined) {
-    if (!isString(data.aud) && !Array.isArray(data.aud)) return false
-    if (Array.isArray(data.aud) && !data.aud.every((a: unknown) => isString(a))) return false
+  if (data['aud'] !== undefined) {
+    if (!isString(data['aud']) && !Array.isArray(data['aud'])) return false
+    if (Array.isArray(data['aud']) && !(data['aud'] as unknown[]).every((a: unknown) => isString(a))) return false
   }
   return true
 }
@@ -148,11 +148,11 @@ export function isJWTPayload(data: unknown): data is JWTPayload {
  */
 export function isSerializedSigningKey(data: unknown): data is SerializedSigningKey {
   if (!isObject(data)) return false
-  if (!isString(data.kid)) return false
-  if (data.alg !== 'RS256') return false
-  if (!isObject(data.privateKeyJwk)) return false
-  if (!isObject(data.publicKeyJwk)) return false
-  if (!isNumber(data.createdAt)) return false
+  if (!isString(data['kid'])) return false
+  if (data['alg'] !== 'RS256') return false
+  if (!isObject(data['privateKeyJwk'])) return false
+  if (!isObject(data['publicKeyJwk'])) return false
+  if (!isNumber(data['createdAt'])) return false
   return true
 }
 
@@ -193,12 +193,12 @@ export interface IntrospectionResponseShape {
  */
 export function isIntrospectionResponse(data: unknown): data is IntrospectionResponseShape {
   if (!isObject(data)) return false
-  if (typeof data.active !== 'boolean') return false
-  if (data.sub !== undefined && !isString(data.sub)) return false
-  if (data.client_id !== undefined && !isString(data.client_id)) return false
-  if (data.scope !== undefined && !isString(data.scope)) return false
-  if (data.exp !== undefined && !isNumber(data.exp)) return false
-  if (data.iat !== undefined && !isNumber(data.iat)) return false
-  if (data.iss !== undefined && !isString(data.iss)) return false
+  if (typeof data['active'] !== 'boolean') return false
+  if (data['sub'] !== undefined && !isString(data['sub'])) return false
+  if (data['client_id'] !== undefined && !isString(data['client_id'])) return false
+  if (data['scope'] !== undefined && !isString(data['scope'])) return false
+  if (data['exp'] !== undefined && !isNumber(data['exp'])) return false
+  if (data['iat'] !== undefined && !isNumber(data['iat'])) return false
+  if (data['iss'] !== undefined && !isString(data['iss'])) return false
   return true
 }

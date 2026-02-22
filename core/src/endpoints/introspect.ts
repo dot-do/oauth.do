@@ -51,7 +51,7 @@ export function createIntrospectHandler(config: IntrospectHandlerConfig) {
     if (contentType?.includes('application/json')) {
       try {
         const body: unknown = await c.req.json()
-        if (typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>).token === 'string') {
+        if (typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>)['token'] === 'string') {
           token = (body as { token: string }).token
         }
       } catch {

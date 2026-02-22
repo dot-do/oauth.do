@@ -245,12 +245,12 @@ export async function handleStripeWebhook(
 /**
  * Verify Stripe webhook signature
  */
-export function verifyStripeWebhook(
+export async function verifyStripeWebhook(
   payload: string,
   signature: string,
   webhookSecret: string,
   stripe: StripeClient
-): StripeWebhookEvent {
+): Promise<StripeWebhookEvent> {
   return stripe.webhooks.constructEvent(payload, signature, webhookSecret)
 }
 

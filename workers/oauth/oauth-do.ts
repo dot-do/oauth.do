@@ -205,6 +205,18 @@ export class OAuthDO extends DurableObject<OAuthDOEnv> {
   }
 
   /**
+   * Sign a test JWT for diagnostics — verifies signing key is working
+   */
+  async signTestJwt(): Promise<string> {
+    await this.initialize()
+    if (!this.keyManager) throw new Error('Not initialized')
+    return this.keyManager.signAccessToken(
+      { sub: 'test-user', client_id: 'test', email: 'test@oauth.do', roles: ['admin'] },
+      { issuer: 'https://oauth.do', expiresIn: 300 }
+    )
+  }
+
+  /**
    * Get storage adapter for direct access (e.g., from admin routes)
    */
   getStorage(): CollectionsOAuthStorage | null {

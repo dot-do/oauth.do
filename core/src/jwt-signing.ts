@@ -380,18 +380,18 @@ export async function verifyJWTWithKeyManager(
     const now = Math.floor(Date.now() / 1000)
 
     // Validate exp
-    if (typeof payload.exp === 'number' && now > payload.exp + clockTolerance) {
+    if (typeof payload['exp'] === 'number' && now > payload['exp'] + clockTolerance) {
       return null
     }
 
     // Validate iss
-    if (issuer !== undefined && payload.iss !== issuer) {
+    if (issuer !== undefined && payload['iss'] !== issuer) {
       return null
     }
 
     // Validate aud
     if (audience !== undefined) {
-      const tokenAud = Array.isArray(payload.aud) ? payload.aud : payload.aud ? [payload.aud] : []
+      const tokenAud = Array.isArray(payload['aud']) ? payload['aud'] : payload['aud'] ? [payload['aud']] : []
       const expectedAud = Array.isArray(audience) ? audience : [audience]
       if (!expectedAud.some((a) => tokenAud.includes(a))) {
         return null

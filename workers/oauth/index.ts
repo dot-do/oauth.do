@@ -216,10 +216,10 @@ function createApp(env: Env): Hono<{ Bindings: Env }> {
     return stub.fetch(c.req.raw)
   })
 
-  // GET /callback - let SPA handle client-side WorkOS AuthKit flow
-  // (Server-side flows use /api/callback instead)
+  // GET /callback — reserved for the @mdxui/auth SPA client-side flow.
+  // Server-side upstream callbacks use /api/callback (routed below).
 
-  // /api/* routes for API-style callbacks
+  // /api/* routes for server-side callbacks
   app.get('/api/callback', async (c) => {
     const stub = getOAuthDO(c.env)
     return stub.fetch(c.req.raw)
@@ -461,6 +461,14 @@ export default class OAuthWorker extends WorkerEntrypoint<Env> {
   }
 
   /**
+   * Sign a test JWT for diagnostics — end-to-end signing key verification
+   */
+  async signTestJwt(): Promise<string> {
+    const stub = getOAuthDO(this.env)
+    return stub.signTestJwt()
+  }
+
+  /**
    * Exchange an authorization code for tokens via Workers RPC
    *
    * @param code - The authorization code from the callback
@@ -470,7 +478,7 @@ export default class OAuthWorker extends WorkerEntrypoint<Env> {
     const stub = getOAuthDO(this.env)
     return stub.fetch(new Request('https://oauth.do/exchange', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Origin': 'https://oauth.do' },
       body: JSON.stringify({ code }),
     }))
   }

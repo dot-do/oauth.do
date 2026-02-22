@@ -37,9 +37,9 @@ export interface ServerContext {
   /** Storage backend */
   storage: OAuthStorage
   /** Upstream OAuth provider configuration */
-  upstream?: UpstreamOAuthConfig
+  upstream?: UpstreamOAuthConfig | undefined
   /** Development mode configuration */
-  devMode?: DevModeConfig
+  devMode?: DevModeConfig | undefined
   /** Supported scopes */
   scopes: string[]
   /** Access token TTL in seconds */
@@ -51,9 +51,9 @@ export interface ServerContext {
   /** Enable dynamic client registration */
   enableDynamicRegistration: boolean
   /** Callback after user authentication */
-  onUserAuthenticated?: (user: OAuthUser) => void | Promise<void>
+  onUserAuthenticated?: ((user: OAuthUser) => void | Promise<void>) | undefined
   /** Callback after token revocation */
-  onTokenRevoked?: (token: string, tokenTypeHint?: string) => void | Promise<void>
+  onTokenRevoked?: ((token: string, tokenTypeHint?: string) => void | Promise<void>) | undefined
   /** Enable debug logging */
   debug: boolean
   /** Allowed CORS origins */
@@ -63,13 +63,13 @@ export interface ServerContext {
   /** Require authentication for registration */
   requireRegistrationAuth: boolean
   /** Admin token for registration */
-  adminToken?: string
+  adminToken?: string | undefined
   /** Trusted (first-party) client IDs that skip consent */
   trustedClientIds: string[]
   /** Skip consent screen for all clients */
   skipConsent: boolean
   /** Test helpers (only in dev mode) */
-  testHelpers?: TestHelpers
+  testHelpers?: TestHelpers | undefined
   /** Get effective issuer for a request */
   getEffectiveIssuer: (c: Context) => string
   /** Validate redirect URI scheme */
