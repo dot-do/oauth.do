@@ -9,7 +9,7 @@ import {
   SigningKeyManager,
   type SigningKey,
   type SerializedSigningKey,
-} from './jwt-signing.js'
+} from 'id.org.ai/oauth'
 
 // Helper: decode base64url string to bytes
 function base64UrlDecode(s: string): Uint8Array {

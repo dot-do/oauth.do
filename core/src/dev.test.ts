@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { createOAuth21Server, MemoryOAuthStorage } from './index'
+import { createOAuth21Server, MemoryOAuthStorage } from 'id.org.ai/oauth'
 
 describe('Dev Mode', () => {
   describe('createOAuth21Server with devMode', () => {

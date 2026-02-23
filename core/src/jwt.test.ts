@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { verifyJWT, decodeJWT, isJWTExpired, clearJWKSCache } from './jwt.js'
-import type { JWTVerifyOptions } from './jwt.js'
+import { verifyJWT, decodeJWT, isJWTExpired, clearJWKSCache } from 'id.org.ai/oauth'
+import type { JWTVerifyOptions } from 'id.org.ai/oauth'
 
 // Test keys generated for testing purposes
 // These are NOT production keys - for testing only

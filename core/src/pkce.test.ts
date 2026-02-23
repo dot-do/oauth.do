@@ -12,7 +12,7 @@ import {
   base64UrlEncode,
   base64UrlDecode,
   constantTimeEqual,
-} from './pkce.js'
+} from 'id.org.ai/oauth'
 
 describe('PKCE', () => {
   describe('generateCodeVerifier', () => {

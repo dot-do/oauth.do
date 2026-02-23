@@ -1,7 +1,7 @@
 {
   "name": "@dotdo/oauth",
   "version": "0.1.7",
-  "description": "OAuth 2.1 server implementation for MCP - the leaf package with zero dependencies on @dotdo/do or oauth.do",
+  "description": "OAuth 2.1 server implementation for MCP - re-exports from id.org.ai/oauth + .do-specific storage backends",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -64,7 +64,8 @@
   },
   "dependencies": {
     "@dotdo/collections": "^0.1.1",
-    "hono": "^4.7.0"
+    "hono": "^4.7.0",
+    "id.org.ai": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250124.0",

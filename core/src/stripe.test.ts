@@ -4,7 +4,7 @@ import {
   verifyStripeWebhookAsync,
   computeStripeSignature,
   timingSafeEqual,
-} from './stripe.js'
+} from 'id.org.ai/oauth'
 
 const TEST_SECRET = 'whsec_test_secret_key'
 const TEST_PAYLOAD = JSON.stringify({

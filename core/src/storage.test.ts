@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { MemoryOAuthStorage } from './storage.js'
-import type { OAuthUser, OAuthOrganization, OAuthClient, OAuthAuthorizationCode, OAuthGrant } from './types.js'
+import { MemoryOAuthStorage } from 'id.org.ai/oauth'
+import type { OAuthUser, OAuthOrganization, OAuthClient, OAuthAuthorizationCode, OAuthGrant } from 'id.org.ai/oauth'
 
 describe('MemoryOAuthStorage', () => {
   let storage: MemoryOAuthStorage

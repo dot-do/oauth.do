@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { createOAuth21Server, MemoryOAuthStorage, generateCodeChallenge, generateCodeVerifier } from './index'
-import { consentCoversScopes, getScopeDescription, generateConsentScreenHtml } from './consent'
+import { createOAuth21Server, MemoryOAuthStorage, generateCodeChallenge, generateCodeVerifier } from 'id.org.ai/oauth'
+import { consentCoversScopes, getScopeDescription, generateConsentScreenHtml } from 'id.org.ai/oauth'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Unit Tests - Consent Utilities

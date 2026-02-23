@@ -5,7 +5,7 @@
  * Implements the OAuthStorage interface for persistent storage.
  */
 
-import type { OAuthStorage, ListOptions } from './storage.js'
+import type { OAuthStorage, ListOptions } from 'id.org.ai/oauth'
 import type {
   OAuthUser,
   OAuthOrganization,
@@ -16,8 +16,8 @@ import type {
   OAuthGrant,
   OAuthDeviceCode,
   OAuthConsent,
-} from './types.js'
-import { isStringArray } from './guards.js'
+} from 'id.org.ai/oauth'
+import { isStringArray } from 'id.org.ai/oauth'
 
 /**
  * Cloudflare Durable Object SqlStorage interface

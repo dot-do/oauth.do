@@ -9,7 +9,7 @@ import {
   isIntrospectionResponse,
   assertValid,
   ValidationError,
-} from './guards.js'
+} from 'id.org.ai/oauth'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ValidationError

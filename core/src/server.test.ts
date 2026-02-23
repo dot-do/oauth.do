@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { createOAuth21Server, MemoryOAuthStorage, generateCodeChallenge, generateCodeVerifier, computeRefreshTokenExpiry } from './index'
+import { createOAuth21Server, MemoryOAuthStorage, generateCodeChallenge, generateCodeVerifier, computeRefreshTokenExpiry } from 'id.org.ai/oauth'
 
 describe('OAuth 2.1 Server E2E Flow', () => {
   let server: ReturnType<typeof createOAuth21Server>

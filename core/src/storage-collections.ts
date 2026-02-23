@@ -10,7 +10,7 @@
 
 import { createCollection, initCollectionsSchema } from '@dotdo/collections'
 import type { SyncCollection } from '@dotdo/collections/types'
-import type { OAuthStorage } from './storage.js'
+import type { OAuthStorage } from 'id.org.ai/oauth'
 import type {
   OAuthUser,
   OAuthClient,
@@ -21,7 +21,7 @@ import type {
   OAuthOrganization,
   OAuthDeviceCode,
   OAuthConsent,
-} from './types.js'
+} from 'id.org.ai/oauth'
 
 /**
  * Document types with string IDs for collections.

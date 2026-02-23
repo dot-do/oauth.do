@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createOAuth21Server } from './server.js'
-import type { OAuthStorage } from './storage.js'
-import type { OAuthAccessToken } from './types.js'
-import { SigningKeyManager, type SigningKey, generateSigningKey, signAccessToken } from './jwt-signing.js'
+import { createOAuth21Server } from 'id.org.ai/oauth'
+import type { OAuthStorage } from 'id.org.ai/oauth'
+import type { OAuthAccessToken } from 'id.org.ai/oauth'
+import { SigningKeyManager, type SigningKey, generateSigningKey, signAccessToken } from 'id.org.ai/oauth'
 
 // Helper: decode base64url string to bytes
 function base64UrlDecode(s: string): Uint8Array {
