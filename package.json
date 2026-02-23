@@ -100,6 +100,7 @@
   },
   "dependencies": {
     "@dotdo/oauth": "^0.1.6",
+    "id.org.ai": "workspace:*",
     "open": "^10.1.0"
   },
   "optionalDependencies": {

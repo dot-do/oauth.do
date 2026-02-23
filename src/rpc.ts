@@ -35,22 +35,8 @@ export type Service<T> = T
 // ═══════════════════════════════════════════════════════════════════════════
 // Core Types
 // ═══════════════════════════════════════════════════════════════════════════
-export { type AuthUser } from "./types.js";
-import type { AuthUser } from "./types.js";
-
-/**
- * Result of token verification (discriminated union on `valid`)
- */
-export type VerifyResult =
-  | { valid: true; user: AuthUser; cached?: boolean }
-  | { valid: false; error: string }
-
-/**
- * Structured auth result for middleware use
- */
-export type AuthResult =
-  | { ok: true; user: AuthUser }
-  | { ok: false; status: number; error: string }
+export { type AuthUser, type VerifyResult, type AuthResult } from "id.org.ai/auth";
+import type { AuthUser, VerifyResult, AuthResult } from "id.org.ai/auth";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RPC Interface
