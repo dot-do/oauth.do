@@ -33,7 +33,7 @@ import {
 
 const OAUTH_DO_CONFIG = {
   clientId: 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
-  apiUrl: 'https://apis.do',
+  apiUrl: 'https://id.org.ai',
   authKitDomain: 'login.oauth.do',
 }
 
@@ -86,7 +86,7 @@ export interface OAuthDoProviderProps {
  * Pre-configured with oauth.do defaults:
  * - clientId: client_01JQYTRXK9ZPD8JPJTKDCRB656
  * - authKitDomain: login.oauth.do
- * - apiUrl: https://apis.do
+ * - apiUrl: https://id.org.ai
  *
  * @example
  * ```tsx

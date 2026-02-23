@@ -137,7 +137,7 @@ describe('React Components', () => {
 			)
 
 			expect(screen.getByTestId('client-id')).toHaveTextContent('client_01JQYTRXK9ZPD8JPJTKDCRB656')
-			expect(screen.getByTestId('api-url')).toHaveTextContent('https://apis.do')
+			expect(screen.getByTestId('api-url')).toHaveTextContent('https://id.org.ai')
 			expect(screen.getByTestId('auth-domain')).toHaveTextContent('login.oauth.do')
 		})
 
@@ -211,7 +211,7 @@ describe('React Components', () => {
 			)
 
 			expect(screen.getByTestId('client-id')).toHaveTextContent('client_01JQYTRXK9ZPD8JPJTKDCRB656')
-			expect(screen.getByTestId('api-url')).toHaveTextContent('https://apis.do')
+			expect(screen.getByTestId('api-url')).toHaveTextContent('https://id.org.ai')
 			expect(screen.getByTestId('auth-domain')).toHaveTextContent('login.oauth.do')
 		})
 

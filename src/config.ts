@@ -6,7 +6,7 @@ import { getEnv } from './utils.js'
  * Note: storagePath is optional and may be undefined
  */
 let globalConfig: Omit<Required<OAuthConfig>, 'storagePath'> & Pick<OAuthConfig, 'storagePath'> = {
-	apiUrl: getEnv('OAUTH_API_URL') || getEnv('API_URL') || 'https://apis.do',
+	apiUrl: getEnv('OAUTH_API_URL') || getEnv('API_URL') || 'https://id.org.ai',
 	clientId: getEnv('OAUTH_CLIENT_ID') || 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
 	authKitDomain: getEnv('OAUTH_AUTHKIT_DOMAIN') || 'login.oauth.do',
 	fetch: globalThis.fetch,

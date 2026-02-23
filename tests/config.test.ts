@@ -10,7 +10,7 @@ describe('config', () => {
 
 		// Reset config to defaults
 		configure({
-			apiUrl: 'https://apis.do',
+			apiUrl: 'https://id.org.ai',
 			clientId: 'oauth.do',
 			authKitDomain: 'login.oauth.do',
 			fetch: globalThis.fetch,
@@ -20,7 +20,7 @@ describe('config', () => {
 	it('should have default configuration', () => {
 		const config = getConfig()
 
-		expect(config.apiUrl).toBe('https://apis.do')
+		expect(config.apiUrl).toBe('https://id.org.ai')
 		expect(config.clientId).toBe('oauth.do')
 		expect(config.authKitDomain).toBe('login.oauth.do')
 		expect(config.fetch).toBe(globalThis.fetch)
@@ -47,7 +47,7 @@ describe('config', () => {
 	it('should merge partial configuration', () => {
 		// First set full config to reset state
 		configure({
-			apiUrl: 'https://apis.do',
+			apiUrl: 'https://id.org.ai',
 			clientId: '',
 			authKitDomain: 'login.oauth.do',
 			fetch: globalThis.fetch,

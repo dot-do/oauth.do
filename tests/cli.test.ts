@@ -34,7 +34,7 @@ vi.mock('../src/storage.js', () => {
 vi.mock('../src/config.js', () => ({
 	configure: vi.fn(),
 	getConfig: vi.fn().mockReturnValue({
-		apiUrl: 'https://apis.do',
+		apiUrl: 'https://id.org.ai',
 		clientId: 'test-client-id',
 		authKitDomain: 'login.oauth.do',
 		fetch: globalThis.fetch,
@@ -138,7 +138,7 @@ describe('CLI', () => {
 		vi.doMock('../src/config.js', () => ({
 			configure,
 			getConfig: vi.fn().mockReturnValue({
-				apiUrl: 'https://apis.do',
+				apiUrl: 'https://id.org.ai',
 				clientId: 'test-client-id',
 				authKitDomain: 'login.oauth.do',
 				fetch: globalThis.fetch,
