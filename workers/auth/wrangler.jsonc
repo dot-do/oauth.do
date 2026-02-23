@@ -1,6 +1,10 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "auth",
+  // Phase 3: renamed from "auth" to "auth-verifier" to avoid collision with
+  // id.org.ai worker (currently deployed as "auth"). In Phase 5, this becomes
+  // the actual "auth" worker (lightweight JWT/API key verifier) and id.org.ai
+  // becomes "oauth" (full identity + OAuth 2.1 server).
+  "name": "auth-verifier",
   "account_id": "b6641681fe423910342b9ffa1364c76d",
   "main": "index.ts",
   "compatibility_date": "2026-01-25",

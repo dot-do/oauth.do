@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "auth",
+  "name": "auth-verifier",
   "account_id": "b6641681fe423910342b9ffa1364c76d",
   "main": "index.ts",
   "compatibility_date": "2026-01-25",
