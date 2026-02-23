@@ -178,6 +178,24 @@ async function cacheResult(token: string, result: VerifyResult): Promise<void> {
   }
 }
 
+// id.org.ai JWKS cache (for tokens signed by the identity provider)
+let idOrgAiJwksCache: jose.JWTVerifyGetKey | null = null
+let idOrgAiJwksCacheExpiry = 0
+
+async function getIdOrgAiJwks(): Promise<jose.JWTVerifyGetKey> {
+  const now = Date.now()
+  if (idOrgAiJwksCache && idOrgAiJwksCacheExpiry > now) {
+    return idOrgAiJwksCache
+  }
+
+  // auth.headless.ly is the same worker as id.org.ai — DNS for id.org.ai
+  // currently points to Vercel, so we use auth.headless.ly (workers.do zone)
+  const jwksUri = 'https://auth.headless.ly/.well-known/jwks.json'
+  idOrgAiJwksCache = jose.createRemoteJWKSet(new URL(jwksUri))
+  idOrgAiJwksCacheExpiry = now + JWKS_CACHE_TTL
+  return idOrgAiJwksCache
+}
+
 // oauth.do JWKS cache (for tokens issued by oauth.do)
 let oauthJwksCache: jose.JWTVerifyGetKey | null = null
 let oauthJwksCacheExpiry = 0
@@ -212,55 +230,53 @@ async function getWorkosJwks(clientId: string): Promise<jose.JWTVerifyGetKey> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function verifyJWT(token: string, env: Env): Promise<VerifyResult> {
-  // Try oauth.do JWKS first (tokens issued by oauth.do platform)
-  // No audience/issuer constraint - oauth.do tokens may have various audiences
-  // (e.g., 'first-party' for login flow, client_id for OAuth flow)
-  // and various issuers (e.g., 'https://oauth.do', 'https://events.do' via X-Issuer)
-  let oauthError: string | undefined
+  // Verification order: id.org.ai → oauth.do → WorkOS
+  // id.org.ai is the primary issuer (login flow JWTs), oauth.do is legacy,
+  // WorkOS covers tokens issued directly by WorkOS (device flow, etc.)
+
+  const errors: string[] = []
+
+  // 1. Try id.org.ai JWKS (primary — tokens from login flow, iss: 'https://id.org.ai')
+  try {
+    const idJwks = await getIdOrgAiJwks()
+    const { payload } = await jose.jwtVerify(token, idJwks)
+    return { valid: true, user: jwtPayloadToUser(payload) }
+  } catch (err) {
+    errors.push(`id.org.ai: ${err instanceof Error ? err.message : 'failed'}`)
+  }
+
+  // 2. Try oauth.do JWKS (legacy tokens, iss: 'https://oauth.do')
   try {
     const oauthJwks = await getOAuthJwks()
     const { payload } = await jose.jwtVerify(token, oauthJwks)
-
-    const orgId = payload.org_id as string | undefined
-    const user: AuthUser = {
-      id: payload.sub || '',
-      email: payload.email as string | undefined,
-      name: payload.name as string | undefined,
-      image: payload.picture as string | undefined,
-      organizationId: orgId,
-      org: orgId, // Backwards compatibility alias
-      roles: extractRoles(payload),
-      permissions: payload.permissions as string[] | undefined,
-    }
-
-    return { valid: true, user }
+    return { valid: true, user: jwtPayloadToUser(payload) }
   } catch (err) {
-    oauthError = err instanceof Error ? err.message : 'oauth.do JWKS verification failed'
+    errors.push(`oauth.do: ${err instanceof Error ? err.message : 'failed'}`)
   }
 
-  // Try WorkOS JWKS (tokens issued directly by WorkOS)
-  // WorkOS session tokens (from device flow) may not have an 'aud' claim,
-  // so we verify without audience constraint first, then with audience as fallback
+  // 3. Try WorkOS JWKS (tokens issued directly by WorkOS)
   try {
     const workosJwks = await getWorkosJwks(env.WORKOS_CLIENT_ID)
     const { payload } = await jose.jwtVerify(token, workosJwks)
-
-    const workosOrgId = payload.org_id as string | undefined
-    const user: AuthUser = {
-      id: payload.sub || '',
-      email: payload.email as string | undefined,
-      name: payload.name as string | undefined,
-      image: payload.picture as string | undefined,
-      organizationId: workosOrgId,
-      org: workosOrgId, // Backwards compatibility alias
-      roles: extractRoles(payload),
-      permissions: payload.permissions as string[] | undefined,
-    }
-
-    return { valid: true, user }
+    return { valid: true, user: jwtPayloadToUser(payload) }
   } catch (err) {
-    const workosError = err instanceof Error ? err.message : 'WorkOS JWKS verification failed'
-    return { valid: false, error: `JWT verification failed (oauth.do: ${oauthError}, WorkOS: ${workosError})` }
+    errors.push(`WorkOS: ${err instanceof Error ? err.message : 'failed'}`)
+  }
+
+  return { valid: false, error: `JWT verification failed (${errors.join(', ')})` }
+}
+
+function jwtPayloadToUser(payload: jose.JWTPayload): AuthUser {
+  const orgId = payload.org_id as string | undefined
+  return {
+    id: payload.sub || '',
+    email: payload.email as string | undefined,
+    name: payload.name as string | undefined,
+    image: payload.picture as string | undefined,
+    organizationId: orgId,
+    org: orgId,
+    roles: extractRoles(payload),
+    permissions: payload.permissions as string[] | undefined,
   }
 }
 
@@ -388,18 +404,19 @@ async function verifyToken(token: string, env: Env): Promise<VerifyResult> {
   let result: VerifyResult
 
   // Try different verification methods based on token format
-  if (token.startsWith('sk_')) {
-    // API keys always start with sk_
+  if (token.startsWith('ses_') || token.startsWith('oai_') || token.startsWith('hly_sk_')) {
+    // Session tokens and custom API keys need IdentityDO — delegate to OAUTH worker
+    result = await delegateToOAuth(token, env)
+  } else if (token.startsWith('sk_')) {
+    // WorkOS API keys — can verify locally via WorkOS API or OAUTH binding
     result = await verifyApiKey(token, env)
   } else if (token.includes('.')) {
     // JWTs contain dots (header.payload.signature)
     result = await verifyJWT(token, env)
   } else if (env.ADMIN_TOKEN) {
     // For other tokens, try admin token verification if configured
-    // This uses timing-safe comparison internally
     result = await verifyAdminToken(token, env)
   } else {
-    // No admin token configured and not a recognized format
     result = { valid: false, error: 'Invalid token format' }
   }
 
@@ -407,6 +424,31 @@ async function verifyToken(token: string, env: Env): Promise<VerifyResult> {
   await cacheResult(token, result)
 
   return result
+}
+
+/**
+ * Delegate token verification to the full OAuth worker (id.org.ai).
+ * Used for token types that require IdentityDO access (ses_*, oai_*, hly_sk_*).
+ */
+async function delegateToOAuth(token: string, env: Env): Promise<VerifyResult> {
+  if (!env.OAUTH) {
+    return { valid: false, error: 'Session/API key verification requires OAUTH binding' }
+  }
+
+  try {
+    // The OAUTH worker's AuthService has verifyToken() that handles all token types
+    const response = await env.OAUTH.fetch(new Request('https://auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    }))
+
+    const data = await response.json() as unknown
+    if (isVerifyResult(data)) return data
+    return { valid: false, error: 'Invalid response from OAuth worker' }
+  } catch (err) {
+    return { valid: false, error: `OAuth delegation failed: ${err instanceof Error ? err.message : 'unknown'}` }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -638,6 +680,10 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
     }
   }
 }
+
+// AuthService alias — some consumers bind with entrypoint: "AuthService"
+// (apps/agents, apps/code, apps/db, apps/src use AuthService; apps/api, events, apis.do use AuthRPC)
+export { AuthRPC as AuthService }
 
 // Export Hono app as default (keeps HTTP API working)
 export default app
