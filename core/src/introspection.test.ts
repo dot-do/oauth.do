@@ -21,6 +21,32 @@ function decodeJwt(token: string) {
   return { header, payload, signatureB64: signatureB64!, headerB64: headerB64!, payloadB64: payloadB64! }
 }
 
+// In-memory StorageOp for testing (matches id.org.ai's StorageOp type)
+function createMemoryStorageOp() {
+  const store = new Map<string, unknown>()
+  return async (op: { op: 'get' | 'put' | 'delete' | 'list'; key?: string; value?: unknown; options?: { prefix?: string } }) => {
+    switch (op.op) {
+      case 'get':
+        return { value: store.get(op.key!) ?? undefined }
+      case 'put':
+        store.set(op.key!, op.value)
+        return {}
+      case 'delete':
+        store.delete(op.key!)
+        return {}
+      case 'list': {
+        const entries: Record<string, unknown> = {}
+        for (const [k, v] of store) {
+          if (!op.options?.prefix || k.startsWith(op.options.prefix)) entries[k] = v
+        }
+        return entries
+      }
+      default:
+        return {}
+    }
+  }
+}
+
 // Mock storage implementation for testing
 function createMockStorage(): OAuthStorage {
   const accessTokens = new Map<string, OAuthAccessToken>()
@@ -94,7 +120,7 @@ describe('/introspect endpoint', () => {
 
   beforeEach(async () => {
     storage = createMockStorage()
-    signingKeyManager = new SigningKeyManager()
+    signingKeyManager = new SigningKeyManager(createMemoryStorageOp())
     signingKey = await signingKeyManager.getCurrentKey()
   })
 

@@ -28,6 +28,32 @@ function decodeJwt(token: string) {
   return { header, payload, signatureB64: signatureB64!, headerB64: headerB64!, payloadB64: payloadB64! }
 }
 
+// In-memory StorageOp for testing (matches id.org.ai's StorageOp type)
+function createMemoryStorageOp() {
+  const store = new Map<string, unknown>()
+  return async (op: { op: 'get' | 'put' | 'delete' | 'list'; key?: string; value?: unknown; options?: { prefix?: string } }) => {
+    switch (op.op) {
+      case 'get':
+        return { value: store.get(op.key!) ?? undefined }
+      case 'put':
+        store.set(op.key!, op.value)
+        return {}
+      case 'delete':
+        store.delete(op.key!)
+        return {}
+      case 'list': {
+        const entries: Record<string, unknown> = {}
+        for (const [k, v] of store) {
+          if (!op.options?.prefix || k.startsWith(op.options.prefix)) entries[k] = v
+        }
+        return entries
+      }
+      default:
+        return {}
+    }
+  }
+}
+
 describe('SigningKey generation', () => {
   it('generateSigningKey creates a valid RSA-2048 key pair', async () => {
     const key = await generateSigningKey()
@@ -228,7 +254,7 @@ describe('signAccessToken', () => {
 
 describe('SigningKeyManager', () => {
   it('initializes with a generated key when no keys exist', async () => {
-    const manager = new SigningKeyManager()
+    const manager = new SigningKeyManager(createMemoryStorageOp())
     const key = await manager.getCurrentKey()
 
     expect(key).toBeDefined()
@@ -237,14 +263,14 @@ describe('SigningKeyManager', () => {
   })
 
   it('getActiveKey returns the same key on subsequent calls', async () => {
-    const manager = new SigningKeyManager()
+    const manager = new SigningKeyManager(createMemoryStorageOp())
     const key1 = await manager.getCurrentKey()
     const key2 = await manager.getCurrentKey()
     expect(key1.kid).toBe(key2.kid)
   })
 
   it('getAllKeys returns all keys', async () => {
-    const manager = new SigningKeyManager({ maxKeys: 3 })
+    const manager = new SigningKeyManager(createMemoryStorageOp())
     await manager.getCurrentKey()
     await manager.rotateKey()
 
@@ -252,19 +278,19 @@ describe('SigningKeyManager', () => {
     expect(allKeys).toHaveLength(2)
   })
 
-  it('toJWKS returns JWKs for all keys', async () => {
-    const manager = new SigningKeyManager({ maxKeys: 3 })
+  it('getJWKS returns JWKs for all keys', async () => {
+    const manager = new SigningKeyManager(createMemoryStorageOp())
     await manager.getCurrentKey()
     await manager.rotateKey()
 
-    const jwks = await manager.toJWKS()
+    const jwks = await manager.getJWKS()
     expect(jwks.keys).toHaveLength(2)
     expect(jwks.keys[0]!.kty).toBe('RSA')
     expect(jwks.keys[1]!.kty).toBe('RSA')
   })
 
   it('rotateKey adds a new key and makes it active', async () => {
-    const manager = new SigningKeyManager({ maxKeys: 3 })
+    const manager = new SigningKeyManager(createMemoryStorageOp())
     const original = await manager.getCurrentKey()
     const rotated = await manager.rotateKey()
     const current = await manager.getCurrentKey()
@@ -274,26 +300,27 @@ describe('SigningKeyManager', () => {
   })
 
   it('rotateKey respects maxKeys limit and removes oldest', async () => {
-    const manager = new SigningKeyManager({ maxKeys: 2 })
+    const manager = new SigningKeyManager(createMemoryStorageOp())
     const first = await manager.getCurrentKey()
     await manager.rotateKey()
     await manager.rotateKey()
 
     const allKeys = manager.getAllKeys()
+    // Default maxKeys is 2, so after 2 rotations we should have 2 keys
     expect(allKeys).toHaveLength(2)
     // The first key should have been removed
     expect(allKeys.find((k) => k.kid === first.kid)).toBeUndefined()
   })
 
   it('key persistence: exportKeys/loadKeys roundtrip works', async () => {
-    const manager1 = new SigningKeyManager({ maxKeys: 3 })
+    const manager1 = new SigningKeyManager(createMemoryStorageOp())
     await manager1.getCurrentKey()
     await manager1.rotateKey()
 
     const exported = await manager1.exportKeys()
     expect(exported).toHaveLength(2)
 
-    const manager2 = new SigningKeyManager({ maxKeys: 3 })
+    const manager2 = new SigningKeyManager(createMemoryStorageOp())
     await manager2.loadKeys(exported)
 
     const keys1 = manager1.getAllKeys()
@@ -322,7 +349,7 @@ describe('SigningKeyManager', () => {
   })
 
   it('signAccessToken uses the current key', async () => {
-    const manager = new SigningKeyManager()
+    const manager = new SigningKeyManager(createMemoryStorageOp())
     const token = await manager.signAccessToken(
       { sub: 'user-1', client_id: 'client-1' },
       { issuer: 'https://oauth.do' }
@@ -334,7 +361,7 @@ describe('SigningKeyManager', () => {
   })
 
   it('default maxKeys is 2', async () => {
-    const manager = new SigningKeyManager()
+    const manager = new SigningKeyManager(createMemoryStorageOp())
     await manager.getCurrentKey()
     await manager.rotateKey()
     await manager.rotateKey()
