@@ -19,11 +19,13 @@
   // - WORKOS_API_KEY
   // - ADMIN_TOKEN
 
-  // Service binding to OAuth worker for API key verification
+  // Service binding to id.org.ai (full identity server) for session/API key verification.
+  // Uses AuthService entrypoint for RPC (verifyToken, getUser, etc.)
   "services": [
     {
       "binding": "OAUTH",
-      "service": "oauth"
+      "service": "auth",
+      "entrypoint": "AuthService"
     }
   ],
 

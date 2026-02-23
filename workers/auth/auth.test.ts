@@ -245,19 +245,13 @@ describe('Auth Worker', () => {
       expect(body.valid).toBe(false)
     })
 
-    it('verifies API key via OAuth worker RPC', async () => {
+    it('verifies API key via id.org.ai AuthService RPC', async () => {
       const mockOAuth = {
-        validateApiKey: vi.fn().mockResolvedValue({
+        verifyToken: vi.fn().mockResolvedValue({
           valid: true,
-          id: 'api_user',
-          name: 'API User',
+          user: { id: 'api_user', name: 'API User' },
         }),
       }
-
-      const jose = await import('jose')
-      vi.mocked(jose.jwtVerify)
-        .mockRejectedValueOnce(new Error('not a JWT'))
-        .mockRejectedValueOnce(new Error('not a JWT'))
 
       const res = await app.request('/verify?token=sk_test_key123', {}, {
         ...TEST_ENV,
@@ -266,6 +260,48 @@ describe('Auth Worker', () => {
       const body = await res.json()
       expect(body.valid).toBe(true)
       expect(body.user.id).toBe('api_user')
+      expect(mockOAuth.verifyToken).toHaveBeenCalledWith('sk_test_key123')
+    })
+
+    it('verifies session token via id.org.ai AuthService RPC', async () => {
+      const mockOAuth = {
+        verifyToken: vi.fn().mockResolvedValue({
+          valid: true,
+          user: { id: 'identity_abc', email: 'user@example.com', name: 'Test User' },
+        }),
+      }
+
+      const res = await app.request('/verify?token=ses_test_session_token', {}, {
+        ...TEST_ENV,
+        OAUTH: mockOAuth,
+      })
+      const body = await res.json()
+      expect(body.valid).toBe(true)
+      expect(body.user.id).toBe('identity_abc')
+      expect(body.user.email).toBe('user@example.com')
+      expect(mockOAuth.verifyToken).toHaveBeenCalledWith('ses_test_session_token')
+    })
+
+    it('returns error when OAUTH binding is missing for session tokens', async () => {
+      const res = await app.request('/verify?token=ses_no_binding', {}, TEST_ENV)
+      const body = await res.json()
+      expect(body.valid).toBe(false)
+      expect(body.error).toContain('OAUTH binding')
+    })
+
+    it('handles OAUTH RPC failure gracefully', async () => {
+      const mockOAuth = {
+        verifyToken: vi.fn().mockRejectedValue(new Error('RPC connection failed')),
+      }
+
+      const res = await app.request('/verify?token=ses_broken', {}, {
+        ...TEST_ENV,
+        OAUTH: mockOAuth,
+      })
+      const body = await res.json()
+      expect(body.valid).toBe(false)
+      expect(body.error).toContain('OAuth delegation failed')
+      expect(body.error).toContain('RPC connection failed')
     })
   })
 

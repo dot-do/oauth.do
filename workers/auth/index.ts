@@ -22,12 +22,13 @@ import * as jose from 'jose'
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * RPC interface for the OAuth worker service binding.
- * Methods match the RPC entrypoints on OAuthWorker.
+ * RPC interface for id.org.ai's AuthService (WorkerEntrypoint).
+ * Bound via service binding with entrypoint: "AuthService".
  */
-interface OAuthRPC {
-  validateApiKey(apiKey: string): Promise<{ valid: boolean; id?: string; name?: string; organization_id?: string; permissions?: string[]; error?: string }>
-  fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
+interface AuthServiceRPC {
+  verifyToken(token: string): Promise<VerifyResult>
+  getUser(token: string): Promise<AuthUser | null>
+  authenticate(authorization?: string | null, cookie?: string | null): Promise<{ ok: true; user: AuthUser } | { ok: false; status: number; error: string }>
 }
 
 interface Env {
@@ -35,8 +36,8 @@ interface Env {
   WORKOS_API_KEY?: string
   ADMIN_TOKEN?: string
   ALLOWED_ORIGINS?: string
-  // RPC binding to OAuth worker for API key verification
-  OAUTH?: OAuthRPC
+  // RPC binding to id.org.ai AuthService for session/API key verification
+  OAUTH?: AuthServiceRPC
 }
 
 /**
@@ -93,15 +94,6 @@ function isVerifyResult(data: unknown): data is VerifyResult {
     if (!isObject(data.user)) return false
     if (typeof (data.user as Record<string, unknown>).id !== 'string') return false
   }
-  return true
-}
-
-function isWorkOSUserResponse(data: unknown): data is { id: string; email: string; first_name?: string; last_name?: string } {
-  if (!isObject(data)) return false
-  if (typeof data.id !== 'string') return false
-  if (typeof data.email !== 'string') return false
-  if (data.first_name !== undefined && typeof data.first_name !== 'string') return false
-  if (data.last_name !== undefined && typeof data.last_name !== 'string') return false
   return true
 }
 
@@ -335,62 +327,8 @@ async function verifyAdminToken(token: string, env: Env): Promise<VerifyResult> 
   return { valid: false, error: 'Invalid admin token' }
 }
 
-async function verifyApiKey(key: string, env: Env): Promise<VerifyResult> {
-  // API keys start with sk_
-  if (!key.startsWith('sk_')) {
-    return { valid: false, error: 'Invalid API key format' }
-  }
-
-  // If we have an OAuth worker binding, use RPC to verify
-  if (env.OAUTH) {
-    try {
-      const result = await env.OAUTH.validateApiKey(key)
-      if (!result.valid) {
-        return { valid: false, error: result.error || 'Invalid API key' }
-      }
-      return {
-        valid: true,
-        user: {
-          id: result.id || key,
-          name: result.name,
-          organizationId: result.organization_id,
-          org: result.organization_id,
-          permissions: result.permissions,
-        },
-      }
-    } catch {
-      return { valid: false, error: 'API key verification service unavailable' }
-    }
-  }
-
-  // Fallback: Call WorkOS API directly (slower, but works without OAuth worker)
-  if (env.WORKOS_API_KEY) {
-    try {
-      const response = await fetch('https://api.workos.com/user_management/users/me', {
-        headers: { Authorization: `Bearer ${key}` },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (!isWorkOSUserResponse(data)) {
-          return { valid: false, error: 'Invalid response from WorkOS API' }
-        }
-        return {
-          valid: true,
-          user: {
-            id: data.id,
-            email: data.email,
-            name: [data.first_name, data.last_name].filter(Boolean).join(' ') || undefined,
-          },
-        }
-      }
-    } catch {
-      // Fall through
-    }
-  }
-
-  return { valid: false, error: 'Invalid API key' }
-}
+// sk_* API key verification — delegated to id.org.ai AuthService
+// (id.org.ai handles WorkOS API key validation internally)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Main Verification
@@ -404,12 +342,9 @@ async function verifyToken(token: string, env: Env): Promise<VerifyResult> {
   let result: VerifyResult
 
   // Try different verification methods based on token format
-  if (token.startsWith('ses_') || token.startsWith('oai_') || token.startsWith('hly_sk_')) {
-    // Session tokens and custom API keys need IdentityDO — delegate to OAUTH worker
+  if (token.startsWith('ses_') || token.startsWith('oai_') || token.startsWith('hly_sk_') || token.startsWith('sk_')) {
+    // Session tokens, custom API keys, and WorkOS API keys — delegate to id.org.ai AuthService
     result = await delegateToOAuth(token, env)
-  } else if (token.startsWith('sk_')) {
-    // WorkOS API keys — can verify locally via WorkOS API or OAUTH binding
-    result = await verifyApiKey(token, env)
   } else if (token.includes('.')) {
     // JWTs contain dots (header.payload.signature)
     result = await verifyJWT(token, env)
@@ -427,7 +362,7 @@ async function verifyToken(token: string, env: Env): Promise<VerifyResult> {
 }
 
 /**
- * Delegate token verification to the full OAuth worker (id.org.ai).
+ * Delegate token verification to id.org.ai's AuthService via RPC.
  * Used for token types that require IdentityDO access (ses_*, oai_*, hly_sk_*).
  */
 async function delegateToOAuth(token: string, env: Env): Promise<VerifyResult> {
@@ -436,16 +371,7 @@ async function delegateToOAuth(token: string, env: Env): Promise<VerifyResult> {
   }
 
   try {
-    // The OAUTH worker's AuthService has verifyToken() that handles all token types
-    const response = await env.OAUTH.fetch(new Request('https://auth/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
-    }))
-
-    const data = await response.json() as unknown
-    if (isVerifyResult(data)) return data
-    return { valid: false, error: 'Invalid response from OAuth worker' }
+    return await env.OAUTH.verifyToken(token)
   } catch (err) {
     return { valid: false, error: `OAuth delegation failed: ${err instanceof Error ? err.message : 'unknown'}` }
   }
