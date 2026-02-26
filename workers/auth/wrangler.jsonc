@@ -26,6 +26,11 @@
       "binding": "OAUTH",
       "service": "auth",
       "entrypoint": "AuthService"
+    },
+    {
+      "binding": "EVENTS",
+      "service": "events",
+      "entrypoint": "EventsService"
     }
   ],
 

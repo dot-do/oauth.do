@@ -38,6 +38,8 @@ interface Env {
   ALLOWED_ORIGINS?: string
   // RPC binding to id.org.ai AuthService for session/API key verification
   OAUTH?: AuthServiceRPC
+  // Events service binding for normalized event emission
+  EVENTS?: { ingest: (events: Array<Record<string, unknown>>) => Promise<void> }
 }
 
 /**
@@ -490,6 +492,61 @@ app.post('/invalidate', async (c) => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Event Emission
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ULID_ENCODING = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+
+function ulid(timestamp = Date.now()): string {
+  let t = timestamp
+  let timeStr = ''
+  for (let i = 0; i < 10; i++) {
+    timeStr = ULID_ENCODING[t % 32] + timeStr
+    t = Math.floor(t / 32)
+  }
+  let randStr = ''
+  for (let i = 0; i < 16; i++) {
+    randStr += ULID_ENCODING[Math.floor(Math.random() * 32)]
+  }
+  return timeStr + randStr
+}
+
+function buildWorkosEvent(input: {
+  ns: string
+  entityType: string
+  action: string
+  entityId: string
+  payload: Record<string, unknown>
+}): Record<string, unknown> {
+  return {
+    id: ulid(),
+    ns: input.ns,
+    type: 'webhook',
+    event: `workos.${input.entityType}.${input.action}`,
+    source: 'workos',
+    data: {
+      provider: 'workos',
+      entity: input.entityType,
+      action: input.action,
+      id: input.entityId,
+      eventType: input.action === 'imported' ? 'import' : 'webhook',
+      payload: input.payload,
+    },
+    actor: {},
+    meta: {},
+  }
+}
+
+async function emitEvents(events: Record<string, unknown>[], binding: Env['EVENTS']): Promise<void> {
+  if (!events.length || !binding) return
+  try {
+    await binding.ingest(events)
+  } catch (err) {
+    console.error('[auth] Failed to emit events:', err)
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // RPC Entrypoint - Zero bundle overhead for consumers
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -604,6 +661,116 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
     } catch {
       return false
     }
+  }
+
+  /**
+   * Baseline import: fetch all users from WorkOS and emit as events.
+   */
+  async importUsers(ns?: string): Promise<{ users: number }> {
+    const apiKey = this.env.WORKOS_API_KEY
+    if (!apiKey) throw new Error('WORKOS_API_KEY not configured')
+
+    const namespace = ns || 'default'
+    const events: Record<string, unknown>[] = []
+    let after: string | undefined
+
+    // Paginate through all users
+    while (true) {
+      const url = new URL('https://api.workos.com/user_management/users')
+      url.searchParams.set('limit', '100')
+      if (after) url.searchParams.set('after', after)
+
+      const res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      })
+
+      if (!res.ok) {
+        console.error(`[auth] WorkOS users API failed: ${res.status}`)
+        break
+      }
+
+      const body = (await res.json()) as { data: Array<Record<string, unknown>>; list_metadata: { after?: string } }
+      for (const user of body.data) {
+        events.push(
+          buildWorkosEvent({
+            ns: namespace,
+            entityType: 'user',
+            action: 'imported',
+            entityId: user.id as string,
+            payload: user,
+          }),
+        )
+      }
+
+      after = body.list_metadata?.after
+      if (!after) break
+    }
+
+    // Emit in batches
+    const BATCH_SIZE = 100
+    for (let i = 0; i < events.length; i += BATCH_SIZE) {
+      await emitEvents(events.slice(i, i + BATCH_SIZE), this.env.EVENTS)
+    }
+
+    return { users: events.length }
+  }
+
+  /**
+   * Baseline import: fetch all organizations from WorkOS and emit as events.
+   */
+  async importOrganizations(ns?: string): Promise<{ organizations: number }> {
+    const apiKey = this.env.WORKOS_API_KEY
+    if (!apiKey) throw new Error('WORKOS_API_KEY not configured')
+
+    const namespace = ns || 'default'
+    const events: Record<string, unknown>[] = []
+    let after: string | undefined
+
+    while (true) {
+      const url = new URL('https://api.workos.com/organizations')
+      url.searchParams.set('limit', '100')
+      if (after) url.searchParams.set('after', after)
+
+      const res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      })
+
+      if (!res.ok) {
+        console.error(`[auth] WorkOS organizations API failed: ${res.status}`)
+        break
+      }
+
+      const body = (await res.json()) as { data: Array<Record<string, unknown>>; list_metadata: { after?: string } }
+      for (const org of body.data) {
+        events.push(
+          buildWorkosEvent({
+            ns: namespace,
+            entityType: 'organization',
+            action: 'imported',
+            entityId: org.id as string,
+            payload: org,
+          }),
+        )
+      }
+
+      after = body.list_metadata?.after
+      if (!after) break
+    }
+
+    const BATCH_SIZE = 100
+    for (let i = 0; i < events.length; i += BATCH_SIZE) {
+      await emitEvents(events.slice(i, i + BATCH_SIZE), this.env.EVENTS)
+    }
+
+    return { organizations: events.length }
+  }
+
+  /**
+   * Baseline import: fetch all users and organizations from WorkOS.
+   */
+  async import(ns?: string): Promise<{ users: number; organizations: number }> {
+    const [users, orgs] = await Promise.all([this.importUsers(ns), this.importOrganizations(ns)])
+    return { users: users.users, organizations: orgs.organizations }
   }
 }
 
