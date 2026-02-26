@@ -492,24 +492,10 @@ app.post('/invalidate', async (c) => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Event Emission
+// Event Emission (uses @dotdo/events-sdk)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const ULID_ENCODING = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
-
-function ulid(timestamp = Date.now()): string {
-  let t = timestamp
-  let timeStr = ''
-  for (let i = 0; i < 10; i++) {
-    timeStr = ULID_ENCODING[t % 32] + timeStr
-    t = Math.floor(t / 32)
-  }
-  let randStr = ''
-  for (let i = 0; i < 16; i++) {
-    randStr += ULID_ENCODING[Math.floor(Math.random() * 32)]
-  }
-  return timeStr + randStr
-}
+import { buildEvent, emitEvents as _emitEvents, type NormalizedEvent } from '@dotdo/events-sdk'
 
 function buildWorkosEvent(input: {
   ns: string
@@ -517,33 +503,16 @@ function buildWorkosEvent(input: {
   action: string
   entityId: string
   payload: Record<string, unknown>
-}): Record<string, unknown> {
-  return {
-    id: ulid(),
-    ns: input.ns,
-    type: 'webhook',
-    event: `workos.${input.entityType}.${input.action}`,
-    source: 'workos',
-    data: {
-      provider: 'workos',
-      entity: input.entityType,
-      action: input.action,
-      id: input.entityId,
-      eventType: input.action === 'imported' ? 'import' : 'webhook',
-      payload: input.payload,
-    },
-    actor: {},
-    meta: {},
-  }
+}): NormalizedEvent {
+  return buildEvent('workos', {
+    ...input,
+    eventType: input.action === 'imported' ? 'import' : 'webhook',
+  })
 }
 
-async function emitEvents(events: Record<string, unknown>[], binding: Env['EVENTS']): Promise<void> {
-  if (!events.length || !binding) return
-  try {
-    await binding.ingest(events)
-  } catch (err) {
-    console.error('[auth] Failed to emit events:', err)
-  }
+async function emitEvents(events: NormalizedEvent[], binding: Env['EVENTS']): Promise<void> {
+  if (!binding) return
+  return _emitEvents(events, binding, 'auth')
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -671,7 +640,7 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
     if (!apiKey) throw new Error('WORKOS_API_KEY not configured')
 
     const namespace = ns || 'default'
-    const events: Record<string, unknown>[] = []
+    const events: NormalizedEvent[] = []
     let after: string | undefined
 
     // Paginate through all users
@@ -723,7 +692,7 @@ export class AuthRPC extends WorkerEntrypoint<Env> {
     if (!apiKey) throw new Error('WORKOS_API_KEY not configured')
 
     const namespace = ns || 'default'
-    const events: Record<string, unknown>[] = []
+    const events: NormalizedEvent[] = []
     let after: string | undefined
 
     while (true) {
