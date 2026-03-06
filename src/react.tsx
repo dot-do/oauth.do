@@ -26,6 +26,7 @@ import {
   type Impersonator,
   type IdentityProviderProps,
 } from '@mdxui/auth'
+import { CANONICAL_API_ORIGIN, CANONICAL_AUTHKIT_DOMAIN } from 'id.org.ai/auth'
 
 // ===============================================================================
 // oauth.do default configuration
@@ -33,8 +34,8 @@ import {
 
 const OAUTH_DO_CONFIG = {
   clientId: 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
-  apiUrl: 'https://id.org.ai',
-  authKitDomain: 'login.oauth.do',
+  apiUrl: CANONICAL_API_ORIGIN,
+  authKitDomain: CANONICAL_AUTHKIT_DOMAIN,
 }
 
 // ===============================================================================
@@ -85,7 +86,7 @@ export interface OAuthDoProviderProps {
  *
  * Pre-configured with oauth.do defaults:
  * - clientId: client_01JQYTRXK9ZPD8JPJTKDCRB656
- * - authKitDomain: login.oauth.do
+ * - authKitDomain: id.org.ai
  * - apiUrl: https://id.org.ai
  *
  * @example
@@ -336,11 +337,7 @@ export interface SignOutButtonProps {
  * }
  * ```
  */
-export function SignOutButton({
-  children = 'Sign Out',
-  className,
-  redirectTo = '/',
-}: SignOutButtonProps): JSX.Element {
+export function SignOutButton({ children = 'Sign Out', className, redirectTo = '/' }: SignOutButtonProps): JSX.Element {
   const { signOut } = useAuth()
 
   const handleClick = () => {

@@ -38,34 +38,34 @@ export type DeviceFlowError = 'authorization_pending' | 'slow_down' | 'access_de
  * configuration. oauth.do's OAuthConfig is focused on client-side SDK configuration.
  */
 export interface OAuthConfig {
-	/**
-	 * Base URL for API endpoints
-	 * @default 'https://apis.do'
-	 */
-	apiUrl?: string
+  /**
+   * Base URL for API endpoints
+   * @default 'https://id.org.ai'
+   */
+  apiUrl?: string
 
-	/**
-	 * Client ID for OAuth flow
-	 */
-	clientId?: string
+  /**
+   * Client ID for OAuth flow
+   */
+  clientId?: string
 
-	/**
-	 * AuthKit domain for device authorization
-	 * @default 'login.oauth.do'
-	 */
-	authKitDomain?: string
+  /**
+   * AuthKit domain for device authorization
+   * @default 'id.org.ai'
+   */
+  authKitDomain?: string
 
-	/**
-	 * Custom fetch implementation
-	 */
-	fetch?: typeof fetch
+  /**
+   * Custom fetch implementation
+   */
+  fetch?: typeof fetch
 
-	/**
-	 * Custom path for token storage
-	 * Supports ~ for home directory (e.g., '~/.studio/tokens.json')
-	 * @default '~/.oauth.do/token'
-	 */
-	storagePath?: string
+  /**
+   * Custom path for token storage
+   * Supports ~ for home directory (e.g., '~/.studio/tokens.json')
+   * @default '~/.id.org.ai/token' (mirrored to '~/.oauth.do/token' for compatibility)
+   */
+  storagePath?: string
 }
 
 /**
@@ -78,10 +78,10 @@ export interface OAuthConfig {
  * @see DotdoUser for the full @dotdo/types User type
  */
 export interface User {
-	id: string
-	email?: string
-	name?: string
-	[key: string]: unknown
+  id: string
+  email?: string
+  name?: string
+  [key: string]: unknown
 }
 
 /**
@@ -91,35 +91,35 @@ export interface User {
  * All consuming code should use this type or a compatible subset.
  */
 export interface AuthUser {
-	/** Unique user identifier */
-	id: string
-	/** User's email address */
-	email?: string
-	/** User's display name */
-	name?: string
-	/** User's profile image URL */
-	image?: string
-	/** Organization/tenant ID (canonical name) */
-	organizationId?: string
-	/**
-	 * Organization/tenant ID (alias for backwards compatibility)
-	 * @deprecated Use organizationId instead
-	 */
-	org?: string
-	/** User roles for RBAC */
-	roles?: string[]
-	/** User permissions for fine-grained access */
-	permissions?: string[]
-	/** Additional user metadata */
-	metadata?: Record<string, unknown>
+  /** Unique user identifier */
+  id: string
+  /** User's email address */
+  email?: string
+  /** User's display name */
+  name?: string
+  /** User's profile image URL */
+  image?: string
+  /** Organization/tenant ID (canonical name) */
+  organizationId?: string
+  /**
+   * Organization/tenant ID (alias for backwards compatibility)
+   * @deprecated Use organizationId instead
+   */
+  org?: string
+  /** User roles for RBAC */
+  roles?: string[]
+  /** User permissions for fine-grained access */
+  permissions?: string[]
+  /** Additional user metadata */
+  metadata?: Record<string, unknown>
 }
 
 /**
  * Authentication result
  */
 export interface AuthResult {
-	user: User | null
-	token?: string
+  user: User | null
+  token?: string
 }
 
 /**
@@ -128,18 +128,18 @@ export interface AuthResult {
  * Uses snake_case property names as per OAuth 2.0 Device Authorization Grant (RFC 8628).
  */
 export interface DeviceAuthorizationResponse {
-	/** The device verification code */
-	device_code: string
-	/** The end-user verification code */
-	user_code: string
-	/** The end-user verification URI */
-	verification_uri: string
-	/** Optional verification URI with user code embedded */
-	verification_uri_complete: string
-	/** Lifetime in seconds of the device_code and user_code */
-	expires_in: number
-	/** Minimum polling interval in seconds */
-	interval: number
+  /** The device verification code */
+  device_code: string
+  /** The end-user verification code */
+  user_code: string
+  /** The end-user verification URI */
+  verification_uri: string
+  /** Optional verification URI with user code embedded */
+  verification_uri_complete: string
+  /** Lifetime in seconds of the device_code and user_code */
+  expires_in: number
+  /** Minimum polling interval in seconds */
+  interval: number
 }
 
 /**
@@ -148,18 +148,18 @@ export interface DeviceAuthorizationResponse {
  * Uses snake_case property names as per OAuth 2.0 token endpoint responses (RFC 6749).
  */
 export interface TokenResponse {
-	/** The access token issued by the authorization server */
-	access_token: string
-	/** The type of the token issued (always "Bearer"). Optional because WorkOS device flow omits it. */
-	token_type?: string
-	/** The lifetime in seconds of the access token */
-	expires_in?: number
-	/** The refresh token, which can be used to obtain new access tokens */
-	refresh_token?: string
-	/** The scope of the access token */
-	scope?: string
-	/** User information returned from authentication (oauth.do extension) */
-	user?: User
+  /** The access token issued by the authorization server */
+  access_token: string
+  /** The type of the token issued (always "Bearer"). Optional because WorkOS device flow omits it. */
+  token_type?: string
+  /** The lifetime in seconds of the access token */
+  expires_in?: number
+  /** The refresh token, which can be used to obtain new access tokens */
+  refresh_token?: string
+  /** The scope of the access token */
+  scope?: string
+  /** User information returned from authentication (oauth.do extension) */
+  user?: User
 }
 
 /**
@@ -168,9 +168,7 @@ export interface TokenResponse {
  * @remarks
  * Extends DeviceFlowError with 'unknown' for unhandled errors.
  */
-export type TokenError =
-	| DeviceFlowError
-	| 'unknown'
+export type TokenError = DeviceFlowError | 'unknown'
 
 /**
  * Stored token data including refresh token and expiration
@@ -182,12 +180,12 @@ export type TokenError =
  * @see DotdoStoredTokenData for the full type with tokenType, scope, idToken, issuedAt, and raw
  */
 export interface StoredTokenData {
-	/** The OAuth access token */
-	accessToken: string
-	/** The refresh token for obtaining new access tokens */
-	refreshToken?: string
-	/** Token expiration timestamp (ms since epoch) */
-	expiresAt?: number
+  /** The OAuth access token */
+  accessToken: string
+  /** The refresh token for obtaining new access tokens */
+  refreshToken?: string
+  /** Token expiration timestamp (ms since epoch) */
+  expiresAt?: number
 }
 
 /**
@@ -204,14 +202,14 @@ export interface StoredTokenData {
  * @see DotdoTokenStorage for the key-value based interface
  */
 export interface TokenStorage {
-	/** Get the stored access token */
-	getToken(): Promise<string | null>
-	/** Store an access token */
-	setToken(token: string): Promise<void>
-	/** Remove the stored token */
-	removeToken(): Promise<void>
-	/** Get full token data (optional for backwards compatibility) */
-	getTokenData?(): Promise<StoredTokenData | null>
-	/** Store full token data (optional for backwards compatibility) */
-	setTokenData?(data: StoredTokenData): Promise<void>
+  /** Get the stored access token */
+  getToken(): Promise<string | null>
+  /** Store an access token */
+  setToken(token: string): Promise<void>
+  /** Remove the stored token */
+  removeToken(): Promise<void>
+  /** Get full token data (optional for backwards compatibility) */
+  getTokenData?(): Promise<StoredTokenData | null>
+  /** Store full token data (optional for backwards compatibility) */
+  setTokenData?(data: StoredTokenData): Promise<void>
 }

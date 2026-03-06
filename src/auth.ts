@@ -9,18 +9,18 @@ import type { AuthResult, TokenResponse, StoredTokenData } from './types.js'
  * @see https://developers.cloudflare.com/workers/configuration/secrets/#secrets-store
  */
 async function resolveSecret(value: unknown): Promise<string | null> {
-	if (!value) return null
-	if (typeof value === 'string') return value
-	if (typeof value === 'object' && typeof (value as Record<string, unknown>).get === 'function') {
-		return await (value as { get: () => Promise<string> }).get()
-	}
-	return null
+  if (!value) return null
+  if (typeof value === 'string') return value
+  if (typeof value === 'object' && typeof (value as Record<string, unknown>).get === 'function') {
+    return await (value as { get: () => Promise<string> }).get()
+  }
+  return null
 }
 
 /**
  * Get current authenticated user
  * Calls GET /me endpoint
- * 
+ *
  * When no token is provided, uses getToken() which automatically refreshes
  * tokens that are close to expiry (within 5 minutes).
  *
@@ -28,39 +28,39 @@ async function resolveSecret(value: unknown): Promise<string | null> {
  * @returns Authentication result with user info or null if not authenticated
  */
 export async function getUser(token?: string): Promise<AuthResult> {
-	const config = getConfig()
-	// Use provided token, or get token with automatic refresh
-	const authToken = token || await getToken()
+  const config = getConfig()
+  // Use provided token, or get token with automatic refresh
+  const authToken = token || (await getToken())
 
-	if (!authToken) {
-		return { user: null }
-	}
+  if (!authToken) {
+    return { user: null }
+  }
 
-	try {
-		const response = await config.fetch(`${config.apiUrl}/me`, {
-			method: 'GET',
-			headers: {
-				'Authorization': `Bearer ${authToken}`,
-				'Content-Type': 'application/json',
-			},
-		})
+  try {
+    const response = await config.fetch(`${config.apiUrl}/me`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+    })
 
-		if (!response.ok) {
-			if (response.status === 401) {
-				return { user: null }
-			}
-			throw new Error(`Authentication failed: ${response.statusText}`)
-		}
+    if (!response.ok) {
+      if (response.status === 401) {
+        return { user: null }
+      }
+      throw new Error(`Authentication failed: ${response.statusText}`)
+    }
 
-		const data = await response.json()
-		if (!isUser(data)) {
-			throw new ValidationError('User', 'invalid user response from /me endpoint', data)
-		}
-		return { user: data, token: authToken }
-	} catch (error) {
-		console.error('Auth error:', error)
-		return { user: null }
-	}
+    const data = await response.json()
+    if (!isUser(data)) {
+      throw new ValidationError('User', 'invalid user response from /me endpoint', data)
+    }
+    return { user: data, token: authToken }
+  } catch (error) {
+    console.error('Auth error:', error)
+    return { user: null }
+  }
 }
 
 /**
@@ -70,35 +70,31 @@ export async function getUser(token?: string): Promise<AuthResult> {
  * @param credentials - Login credentials (email, password, etc.)
  * @returns Authentication result with user info and token
  */
-export async function login(credentials: {
-	email?: string
-	password?: string
-	[key: string]: unknown
-}): Promise<AuthResult> {
-	const config = getConfig()
+export async function login(credentials: { email?: string; password?: string; [key: string]: unknown }): Promise<AuthResult> {
+  const config = getConfig()
 
-	try {
-		const response = await config.fetch(`${config.apiUrl}/login`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(credentials),
-		})
+  try {
+    const response = await config.fetch(`${config.apiUrl}/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(credentials),
+    })
 
-		if (!response.ok) {
-			throw new Error(`Login failed: ${response.statusText}`)
-		}
+    if (!response.ok) {
+      throw new Error(`Login failed: ${response.statusText}`)
+    }
 
-		const data = await response.json()
-		if (!isLoginResponse(data)) {
-			throw new ValidationError('LoginResponse', 'invalid response from /login endpoint', data)
-		}
-		return { user: data.user, token: data.token }
-	} catch (error) {
-		console.error('Login error:', error)
-		throw error
-	}
+    const data = await response.json()
+    if (!isLoginResponse(data)) {
+      throw new ValidationError('LoginResponse', 'invalid response from /login endpoint', data)
+    }
+    return { user: data.user, token: data.token }
+  } catch (error) {
+    console.error('Login error:', error)
+    throw error
+  }
 }
 
 /**
@@ -108,28 +104,28 @@ export async function login(credentials: {
  * @param token - Optional authentication token (will use getToken() if not provided)
  */
 export async function logout(token?: string): Promise<void> {
-	const config = getConfig()
-	const authToken = token || await getToken()
+  const config = getConfig()
+  const authToken = token || (await getToken())
 
-	if (!authToken) {
-		return
-	}
+  if (!authToken) {
+    return
+  }
 
-	try {
-		const response = await config.fetch(`${config.apiUrl}/logout`, {
-			method: 'POST',
-			headers: {
-				'Authorization': `Bearer ${authToken}`,
-				'Content-Type': 'application/json',
-			},
-		})
+  try {
+    const response = await config.fetch(`${config.apiUrl}/logout`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+    })
 
-		if (!response.ok) {
-			console.warn(`Logout warning: ${response.statusText}`)
-		}
-	} catch (error) {
-		console.error('Logout error:', error)
-	}
+    if (!response.ok) {
+      console.warn(`Logout warning: ${response.statusText}`)
+    }
+  } catch (error) {
+    console.error('Logout error:', error)
+  }
 }
 
 /**
@@ -149,44 +145,44 @@ export async function logout(token?: string): Promise<void> {
  * @see https://developers.cloudflare.com/changelog/2025-03-17-importable-env/
  */
 export async function getToken(): Promise<string | null> {
-	// Check env vars first (globalThis for Workers legacy, process.env for Node)
-	const adminToken = getEnv('DO_ADMIN_TOKEN')
-	if (adminToken) return adminToken
-	const doToken = getEnv('DO_TOKEN')
-	if (doToken) return doToken
+  // Check env vars first (globalThis for Workers legacy, process.env for Node)
+  const adminToken = getEnv('DO_ADMIN_TOKEN')
+  if (adminToken) return adminToken
+  const doToken = getEnv('DO_TOKEN')
+  if (doToken) return doToken
 
-	// Try cloudflare:workers env import (Workers 2025+)
-	// Supports both plain strings and secrets store bindings
-	try {
-		// @ts-ignore - cloudflare:workers only available in Workers runtime
-		const { env } = await import('cloudflare:workers')
+  // Try cloudflare:workers env import (Workers 2025+)
+  // Supports both plain strings and secrets store bindings
+  try {
+    // @ts-ignore - cloudflare:workers only available in Workers runtime
+    const { env } = await import('cloudflare:workers')
 
-		const cfAdminToken = await resolveSecret((env as Record<string, unknown>).DO_ADMIN_TOKEN)
-		if (cfAdminToken) return cfAdminToken
+    const cfAdminToken = await resolveSecret((env as Record<string, unknown>).DO_ADMIN_TOKEN)
+    if (cfAdminToken) return cfAdminToken
 
-		const cfToken = await resolveSecret((env as Record<string, unknown>).DO_TOKEN)
-		if (cfToken) return cfToken
-	} catch {
-		// Not in Workers environment or env not available
-	}
+    const cfToken = await resolveSecret((env as Record<string, unknown>).DO_TOKEN)
+    if (cfToken) return cfToken
+  } catch {
+    // Not in Workers environment or env not available
+  }
 
-	// Try stored token (Node.js only - uses keychain/file storage)
-	// Delegates to ensureLoggedIn for refresh with race-condition protection
-	try {
-		const { ensureLoggedIn } = await import('./login.js')
-		const result = await ensureLoggedIn({ openBrowser: false, print: () => {} })
-		return result.token
-	} catch {
-		// ensureLoggedIn not available or failed - try raw storage
-		try {
-			const { createSecureStorage } = await import('./storage.js')
-			const config = getConfig()
-			const storage = createSecureStorage(config.storagePath)
-			return await storage.getToken()
-		} catch {
-			return null
-		}
-	}
+  // Try stored token (Node.js only - uses keychain/file storage)
+  // Delegates to ensureLoggedIn for refresh with race-condition protection
+  try {
+    const { ensureLoggedIn } = await import('./login.js')
+    const result = await ensureLoggedIn({ openBrowser: false, print: () => {} })
+    return result.token
+  } catch {
+    // ensureLoggedIn not available or failed - try raw storage
+    try {
+      const { createSecureStorage } = await import('./storage.js')
+      const config = getConfig()
+      const storage = createSecureStorage(config.storagePath)
+      return await storage.getToken()
+    } catch {
+      return null
+    }
+  }
 }
 
 /**
@@ -194,8 +190,8 @@ export async function getToken(): Promise<string | null> {
  * Automatically refreshes tokens that are close to expiry.
  */
 export async function isAuthenticated(token?: string): Promise<boolean> {
-	const result = await getUser(token)
-	return result.user !== null
+  const result = await getUser(token)
+  return result.user !== null
 }
 
 /**
@@ -214,7 +210,7 @@ export type AuthProvider = () => string | null | undefined | Promise<string | nu
  * const token = await getAuth()
  */
 export function auth(): AuthProvider {
-	return getToken
+  return getToken
 }
 
 /**
@@ -224,72 +220,72 @@ export function auth(): AuthProvider {
  * @returns New token response with fresh access_token (and possibly new refresh_token)
  */
 export async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
-	const config = getConfig()
+  const config = getConfig()
 
-	if (!config.clientId) {
-		throw new Error('Client ID is required for token refresh')
-	}
+  if (!config.clientId) {
+    throw new Error('Client ID is required for token refresh')
+  }
 
-	const response = await config.fetch('https://auth.apis.do/user_management/authenticate', {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded',
-		},
-		body: new URLSearchParams({
-			grant_type: 'refresh_token',
-			refresh_token: refreshToken,
-			client_id: config.clientId,
-		}).toString(),
-	})
+  const response = await config.fetch(new URL('/oauth/token', config.apiUrl).toString(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: config.clientId,
+    }).toString(),
+  })
 
-	if (!response.ok) {
-		const errorText = await response.text()
-		throw new Error(`Token refresh failed: ${response.status} - ${errorText}`)
-	}
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Token refresh failed: ${response.status} - ${errorText}`)
+  }
 
-	const data = await response.json()
-	if (!isTokenResponse(data)) {
-		throw new ValidationError('TokenResponse', 'invalid response from token refresh endpoint', data)
-	}
-	return data
+  const data = await response.json()
+  if (!isTokenResponse(data)) {
+    throw new ValidationError('TokenResponse', 'invalid response from token refresh endpoint', data)
+  }
+  return data
 }
 
 /**
  * Get stored token data from storage
  */
 export async function getStoredTokenData(): Promise<StoredTokenData | null> {
-	try {
-		const { createSecureStorage } = await import('./storage.js')
-		const config = getConfig()
-		const storage = createSecureStorage(config.storagePath)
-		if (storage.getTokenData) {
-			return await storage.getTokenData()
-		}
-		// Fall back to just access token
-		const token = await storage.getToken()
-		return token ? { accessToken: token } : null
-	} catch {
-		return null
-	}
+  try {
+    const { createSecureStorage } = await import('./storage.js')
+    const config = getConfig()
+    const storage = createSecureStorage(config.storagePath)
+    if (storage.getTokenData) {
+      return await storage.getTokenData()
+    }
+    // Fall back to just access token
+    const token = await storage.getToken()
+    return token ? { accessToken: token } : null
+  } catch {
+    return null
+  }
 }
 
 /**
  * Store token data including refresh token
  */
 export async function storeTokenData(data: StoredTokenData): Promise<void> {
-	try {
-		const { createSecureStorage } = await import('./storage.js')
-		const config = getConfig()
-		const storage = createSecureStorage(config.storagePath)
-		if (storage.setTokenData) {
-			await storage.setTokenData(data)
-		} else {
-			await storage.setToken(data.accessToken)
-		}
-	} catch (error) {
-		console.error('Failed to store token data:', error)
-		throw error
-	}
+  try {
+    const { createSecureStorage } = await import('./storage.js')
+    const config = getConfig()
+    const storage = createSecureStorage(config.storagePath)
+    if (storage.setTokenData) {
+      await storage.setTokenData(data)
+    } else {
+      await storage.setToken(data.accessToken)
+    }
+  } catch (error) {
+    console.error('Failed to store token data:', error)
+    throw error
+  }
 }
 
 /**
@@ -302,27 +298,27 @@ export async function storeTokenData(data: StoredTokenData): Promise<void> {
  * })
  */
 export function buildAuthUrl(options: {
-	redirectUri: string
-	scope?: string
-	state?: string
-	responseType?: string
-	clientId?: string
-	authDomain?: string
+  redirectUri: string
+  scope?: string
+  state?: string
+  responseType?: string
+  clientId?: string
+  authDomain?: string
 }): string {
-	const config = getConfig()
-	const clientId = options.clientId || config.clientId
-	const authDomain = options.authDomain || config.authKitDomain
+  const config = getConfig()
+  const clientId = options.clientId || config.clientId
+  const authDomain = options.authDomain || config.authKitDomain
 
-	const params = new URLSearchParams({
-		client_id: clientId,
-		redirect_uri: options.redirectUri,
-		response_type: options.responseType || 'code',
-		scope: options.scope || 'openid profile email',
-	})
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: options.redirectUri,
+    response_type: options.responseType || 'code',
+    scope: options.scope || 'openid profile email',
+  })
 
-	if (options.state) {
-		params.set('state', options.state)
-	}
+  if (options.state) {
+    params.set('state', options.state)
+  }
 
-	return `https://${authDomain}/authorize?${params.toString()}`
+  return `https://${authDomain}/authorize?${params.toString()}`
 }

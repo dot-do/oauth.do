@@ -1,18 +1,79 @@
 import type { TokenStorage, StoredTokenData } from './types.js'
+import { COMPATIBLE_KEYCHAIN_SERVICES, COMPATIBLE_TOKEN_DIRNAMES, TOKEN_FILE_NAME } from 'id.org.ai/auth'
 import { getEnv } from './utils.js'
 import { isStoredTokenData } from './guards.js'
 
 // Keychain service and account identifiers
-const KEYCHAIN_SERVICE = 'oauth.do'
+const PRIMARY_KEYCHAIN_SERVICE = COMPATIBLE_KEYCHAIN_SERVICES[0]
 const KEYCHAIN_ACCOUNT = 'access_token'
 
 /**
  * Check if we're running in a Node.js environment
  */
 function isNode(): boolean {
-	return typeof process !== 'undefined' &&
-		process.versions != null &&
-		process.versions.node != null
+  return typeof process !== 'undefined' && process.versions != null && process.versions.node != null
+}
+
+function expandStoragePath(input: string, homeDir: string, pathModule: typeof import('path')): string {
+  return input.startsWith('~/') ? pathModule.join(homeDir, input.slice(2)) : input
+}
+
+function getDefaultTokenPaths(homeDir: string, pathModule: typeof import('path')): string[] {
+  return [...COMPATIBLE_TOKEN_DIRNAMES].map((dirname) => pathModule.join(homeDir, dirname, TOKEN_FILE_NAME))
+}
+
+async function readStoredTokenDataFromFile(filePath: string): Promise<StoredTokenData | null> {
+  const fs = await import('fs/promises')
+  const release = await acquireFileLock(`${filePath}.lock`)
+
+  try {
+    const stats = await fs.stat(filePath)
+    const mode = stats.mode & 0o777
+
+    if (mode !== 0o600 && getEnv('DEBUG')) {
+      console.warn(`Warning: Token file has insecure permissions (${mode.toString(8)}). ` + `Expected 600. Run: chmod 600 ${filePath}`)
+    }
+
+    const content = await fs.readFile(filePath, 'utf-8')
+    const trimmed = content.trim()
+
+    if (trimmed.startsWith('{')) {
+      const parsed = JSON.parse(trimmed)
+      return isStoredTokenData(parsed) ? parsed : null
+    }
+
+    return trimmed ? { accessToken: trimmed } : null
+  } catch {
+    return null
+  } finally {
+    await release()
+  }
+}
+
+async function writeStoredTokenDataToFile(filePath: string, data: StoredTokenData): Promise<void> {
+  const fs = await import('fs/promises')
+  const pathModule = await import('path')
+  const release = await acquireFileLock(`${filePath}.lock`)
+
+  try {
+    await fs.mkdir(pathModule.dirname(filePath), { recursive: true, mode: 0o700 })
+    await atomicWriteFile(filePath, JSON.stringify(data), 0o600)
+  } finally {
+    await release()
+  }
+}
+
+async function removeStoredTokenFile(filePath: string): Promise<void> {
+  const fs = await import('fs/promises')
+  const release = await acquireFileLock(`${filePath}.lock`)
+
+  try {
+    await fs.unlink(filePath)
+  } catch {
+    // Ignore errors if file doesn't exist
+  } finally {
+    await release()
+  }
 }
 
 // ─── File Locking & Atomic Writes ─────────────────────────────────────────────
@@ -41,66 +102,66 @@ const LOCK_RETRY_DELAY_MS = 50
  * Returns a release function. Includes retry with exponential back-off and stale lock cleanup.
  */
 async function acquireFileLock(lockPath: string): Promise<() => Promise<void>> {
-	const fs = await import('fs/promises')
-	const path = await import('path')
-	const lockContent = JSON.stringify({ pid: process.pid, ts: Date.now() })
+  const fs = await import('fs/promises')
+  const path = await import('path')
+  const lockContent = JSON.stringify({ pid: process.pid, ts: Date.now() })
 
-	// Ensure the parent directory of the lockfile exists
-	const lockDir = path.dirname(lockPath)
-	await fs.mkdir(lockDir, { recursive: true, mode: 0o700 })
+  // Ensure the parent directory of the lockfile exists
+  const lockDir = path.dirname(lockPath)
+  await fs.mkdir(lockDir, { recursive: true, mode: 0o700 })
 
-	for (let attempt = 0; attempt < LOCK_RETRIES; attempt++) {
-		try {
-			// O_EXCL + O_CREAT: fails if the file already exists — atomic "create if absent"
-			const fd = await fs.open(lockPath, 'wx')
-			await fd.writeFile(lockContent, 'utf-8')
-			await fd.close()
+  for (let attempt = 0; attempt < LOCK_RETRIES; attempt++) {
+    try {
+      // O_EXCL + O_CREAT: fails if the file already exists — atomic "create if absent"
+      const fd = await fs.open(lockPath, 'wx')
+      await fd.writeFile(lockContent, 'utf-8')
+      await fd.close()
 
-			// Return a release function
-			return async () => {
-				try {
-					await fs.unlink(lockPath)
-				} catch {
-					// Ignore — lockfile may have been cleaned up already
-				}
-			}
-		} catch (err: unknown) {
-			const code = (err as NodeJS.ErrnoException)?.code
-			if (code !== 'EEXIST') {
-				// Unexpected error — propagate
-				throw err
-			}
+      // Return a release function
+      return async () => {
+        try {
+          await fs.unlink(lockPath)
+        } catch {
+          // Ignore — lockfile may have been cleaned up already
+        }
+      }
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code
+      if (code !== 'EEXIST') {
+        // Unexpected error — propagate
+        throw err
+      }
 
-			// Lock file exists — check if it's stale
-			try {
-				const stat = await fs.stat(lockPath)
-				const age = Date.now() - stat.mtimeMs
-				if (age > LOCK_STALE_MS) {
-					// Stale lock from a crashed process — remove and retry immediately
-					if (getEnv('DEBUG')) {
-						console.warn(`Removing stale lockfile (age: ${age}ms): ${lockPath}`)
-					}
-					try {
-						await fs.unlink(lockPath)
-					} catch {
-						// Another process may have already cleaned it up
-					}
-					continue // Retry immediately without waiting
-				}
-			} catch {
-				// Can't stat the lock — it may have been released between the open() and stat()
-				continue
-			}
+      // Lock file exists — check if it's stale
+      try {
+        const stat = await fs.stat(lockPath)
+        const age = Date.now() - stat.mtimeMs
+        if (age > LOCK_STALE_MS) {
+          // Stale lock from a crashed process — remove and retry immediately
+          if (getEnv('DEBUG')) {
+            console.warn(`Removing stale lockfile (age: ${age}ms): ${lockPath}`)
+          }
+          try {
+            await fs.unlink(lockPath)
+          } catch {
+            // Another process may have already cleaned it up
+          }
+          continue // Retry immediately without waiting
+        }
+      } catch {
+        // Can't stat the lock — it may have been released between the open() and stat()
+        continue
+      }
 
-			// Lock is held by another live process — wait with exponential back-off + jitter
-			if (attempt < LOCK_RETRIES - 1) {
-				const delay = LOCK_RETRY_DELAY_MS * Math.pow(2, attempt) + Math.random() * LOCK_RETRY_DELAY_MS
-				await new Promise<void>((resolve) => setTimeout(resolve, delay))
-			}
-		}
-	}
+      // Lock is held by another live process — wait with exponential back-off + jitter
+      if (attempt < LOCK_RETRIES - 1) {
+        const delay = LOCK_RETRY_DELAY_MS * Math.pow(2, attempt) + Math.random() * LOCK_RETRY_DELAY_MS
+        await new Promise<void>((resolve) => setTimeout(resolve, delay))
+      }
+    }
+  }
 
-	throw new Error(`Failed to acquire file lock after ${LOCK_RETRIES} attempts: ${lockPath}`)
+  throw new Error(`Failed to acquire file lock after ${LOCK_RETRIES} attempts: ${lockPath}`)
 }
 
 /**
@@ -112,28 +173,28 @@ async function acquireFileLock(lockPath: string): Promise<() => Promise<void>> {
  * @param mode     - File permission mode (default: 0o600)
  */
 async function atomicWriteFile(filePath: string, content: string, mode = 0o600): Promise<void> {
-	const fs = await import('fs/promises')
-	const path = await import('path')
-	const crypto = await import('crypto')
+  const fs = await import('fs/promises')
+  const path = await import('path')
+  const crypto = await import('crypto')
 
-	// Write to a temp file in the same directory (same filesystem = atomic rename)
-	const tmpSuffix = crypto.randomBytes(6).toString('hex')
-	const tmpPath = path.join(path.dirname(filePath), `.token.tmp.${tmpSuffix}`)
+  // Write to a temp file in the same directory (same filesystem = atomic rename)
+  const tmpSuffix = crypto.randomBytes(6).toString('hex')
+  const tmpPath = path.join(path.dirname(filePath), `.token.tmp.${tmpSuffix}`)
 
-	try {
-		await fs.writeFile(tmpPath, content, { encoding: 'utf-8', mode })
-		await fs.rename(tmpPath, filePath)
-		// Ensure permissions after rename (some systems may not preserve mode across rename)
-		await fs.chmod(filePath, mode)
-	} catch (error) {
-		// Clean up temp file on failure
-		try {
-			await fs.unlink(tmpPath)
-		} catch {
-			// Ignore cleanup errors
-		}
-		throw error
-	}
+  try {
+    await fs.writeFile(tmpPath, content, { encoding: 'utf-8', mode })
+    await fs.rename(tmpPath, filePath)
+    // Ensure permissions after rename (some systems may not preserve mode across rename)
+    await fs.chmod(filePath, mode)
+  } catch (error) {
+    // Clean up temp file on failure
+    try {
+      await fs.unlink(tmpPath)
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error
+  }
 }
 
 /**
@@ -145,173 +206,182 @@ async function atomicWriteFile(filePath: string, content: string, mode = 0o600):
  * This is the most secure option for CLI token storage.
  */
 export class KeychainTokenStorage implements TokenStorage {
-	private keytar: typeof import('keytar') | null = null
-	private initialized = false
+  private keytar: typeof import('keytar') | null = null
+  private initialized = false
+  private readonly services = [...COMPATIBLE_KEYCHAIN_SERVICES]
 
-	/**
-	 * Lazily load keytar module
-	 * Returns null if keytar is not available (e.g., missing native dependencies)
-	 */
-	private async getKeytar(): Promise<typeof import('keytar') | null> {
-		if (this.initialized) {
-			return this.keytar
-		}
+  /**
+   * Lazily load keytar module
+   * Returns null if keytar is not available (e.g., missing native dependencies)
+   */
+  private async getKeytar(): Promise<typeof import('keytar') | null> {
+    if (this.initialized) {
+      return this.keytar
+    }
 
-		this.initialized = true
+    this.initialized = true
 
-		try {
-			// Dynamic import to handle cases where keytar native module isn't available
-			const imported = await import('keytar')
-			// Handle ESM/CJS interop - keytar is CommonJS, so functions may be on .default
-			const keytarModule = (imported as Record<string, unknown>).default || imported
-			this.keytar = keytarModule as typeof import('keytar')
+    try {
+      // Dynamic import to handle cases where keytar native module isn't available
+      const imported = await import('keytar')
+      // Handle ESM/CJS interop - keytar is CommonJS, so functions may be on .default
+      const keytarModule = (imported as Record<string, unknown>).default || imported
+      this.keytar = keytarModule as typeof import('keytar')
 
-			// Verify the module loaded correctly by checking for expected function
-			if (typeof this.keytar.getPassword !== 'function') {
-				if (getEnv('DEBUG')) {
-					console.warn('Keytar module loaded but getPassword is not a function:', Object.keys(this.keytar))
-				}
-				this.keytar = null
-				return null
-			}
+      // Verify the module loaded correctly by checking for expected function
+      if (typeof this.keytar.getPassword !== 'function') {
+        if (getEnv('DEBUG')) {
+          console.warn('Keytar module loaded but getPassword is not a function:', Object.keys(this.keytar))
+        }
+        this.keytar = null
+        return null
+      }
 
-			return this.keytar
-		} catch (error) {
-			// keytar requires native dependencies that may not be available
-			// Fall back gracefully
-			if (getEnv('DEBUG')) {
-				console.warn('Keychain storage not available:', error)
-			}
-			return null
-		}
-	}
+      return this.keytar
+    } catch (error) {
+      // keytar requires native dependencies that may not be available
+      // Fall back gracefully
+      if (getEnv('DEBUG')) {
+        console.warn('Keychain storage not available:', error)
+      }
+      return null
+    }
+  }
 
-	async getToken(): Promise<string | null> {
-		const keytar = await this.getKeytar()
-		if (!keytar) {
-			return null
-		}
+  async getToken(): Promise<string | null> {
+    const keytar = await this.getKeytar()
+    if (!keytar) {
+      return null
+    }
 
-		try {
-			const token = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-			return token
-		} catch (error) {
-			if (getEnv('DEBUG')) {
-				console.warn('Failed to get token from keychain:', error)
-			}
-			return null
-		}
-	}
+    try {
+      for (const service of this.services) {
+        const token = await keytar.getPassword(service, KEYCHAIN_ACCOUNT)
+        if (token) return token
+      }
+      return null
+    } catch (error) {
+      if (getEnv('DEBUG')) {
+        console.warn('Failed to get token from keychain:', error)
+      }
+      return null
+    }
+  }
 
-	async setToken(token: string): Promise<void> {
-		try {
-			const keytar = await this.getKeytar()
-			if (!keytar) {
-				throw new Error('Keychain storage not available')
-			}
+  async setToken(token: string): Promise<void> {
+    try {
+      const keytar = await this.getKeytar()
+      if (!keytar) {
+        throw new Error('Keychain storage not available')
+      }
 
-			await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, token)
-		} catch (error: unknown) {
-			// Check if this is a native module error vs an actual keychain error
-			const err = error instanceof Error ? error : null
-			if ((error as Record<string, unknown>)?.code === 'MODULE_NOT_FOUND' || err?.message?.includes('Cannot find module')) {
-				throw new Error('Keychain storage not available: native module not built')
-			}
-			throw new Error(`Failed to save token to keychain: ${error}`)
-		}
-	}
+      await Promise.all(this.services.map((service) => keytar.setPassword(service, KEYCHAIN_ACCOUNT, token)))
+    } catch (error: unknown) {
+      // Check if this is a native module error vs an actual keychain error
+      const err = error instanceof Error ? error : null
+      if ((error as Record<string, unknown>)?.code === 'MODULE_NOT_FOUND' || err?.message?.includes('Cannot find module')) {
+        throw new Error('Keychain storage not available: native module not built')
+      }
+      throw new Error(`Failed to save token to keychain: ${error}`)
+    }
+  }
 
-	async removeToken(): Promise<void> {
-		const keytar = await this.getKeytar()
-		if (!keytar) {
-			return
-		}
+  async removeToken(): Promise<void> {
+    const keytar = await this.getKeytar()
+    if (!keytar) {
+      return
+    }
 
-		try {
-			await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-		} catch {
-			// Ignore errors if credential doesn't exist
-		}
-	}
+    try {
+      await Promise.all(this.services.map((service) => keytar.deletePassword(service, KEYCHAIN_ACCOUNT)))
+    } catch {
+      // Ignore errors if credential doesn't exist
+    }
+  }
 
-	async getTokenData(): Promise<StoredTokenData | null> {
-		const keytar = await this.getKeytar()
-		if (!keytar) {
-			return null
-		}
+  async getTokenData(): Promise<StoredTokenData | null> {
+    const keytar = await this.getKeytar()
+    if (!keytar) {
+      return null
+    }
 
-		try {
-			const stored = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-			if (!stored) {
-				return null
-			}
+    try {
+      for (const service of this.services) {
+        const stored = await keytar.getPassword(service, KEYCHAIN_ACCOUNT)
+        if (!stored) {
+          continue
+        }
 
-			// Check if it's JSON format (new format with refresh token)
-			if (stored.startsWith('{')) {
-				const parsed = JSON.parse(stored)
-				if (isStoredTokenData(parsed)) {
-					return parsed
-				}
-				if (getEnv('DEBUG')) {
-					console.warn('Keychain stored data failed StoredTokenData validation')
-				}
-				return null
-			}
+        // Check if it's JSON format (new format with refresh token)
+        if (stored.startsWith('{')) {
+          const parsed = JSON.parse(stored)
+          if (isStoredTokenData(parsed)) {
+            return parsed
+          }
+          if (getEnv('DEBUG')) {
+            console.warn(`Keychain stored data failed StoredTokenData validation for ${service}`)
+          }
+          continue
+        }
 
-			// Legacy plain text format - convert to token data
-			return { accessToken: stored }
-		} catch (error) {
-			if (getEnv('DEBUG')) {
-				console.warn('Failed to get token data from keychain:', error)
-			}
-			return null
-		}
-	}
+        // Legacy plain text format - convert to token data
+        return { accessToken: stored }
+      }
+      return null
+    } catch (error) {
+      if (getEnv('DEBUG')) {
+        console.warn('Failed to get token data from keychain:', error)
+      }
+      return null
+    }
+  }
 
-	async setTokenData(data: StoredTokenData): Promise<void> {
-		const keytar = await this.getKeytar()
-		if (!keytar) {
-			throw new Error('Keychain storage not available')
-		}
+  async setTokenData(data: StoredTokenData): Promise<void> {
+    const keytar = await this.getKeytar()
+    if (!keytar) {
+      throw new Error('Keychain storage not available')
+    }
 
-		try {
-			// Store as JSON to preserve refresh token and expiration
-			await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, JSON.stringify(data))
-		} catch (error: unknown) {
-			const err = error instanceof Error ? error : null
-			if ((error as Record<string, unknown>)?.code === 'MODULE_NOT_FOUND' || err?.message?.includes('Cannot find module')) {
-				throw new Error('Keychain storage not available: native module not built')
-			}
-			throw new Error(`Failed to save token data to keychain: ${error}`)
-		}
-	}
+    try {
+      // Store as JSON to preserve refresh token and expiration
+      const serialized = JSON.stringify(data)
+      await Promise.all(this.services.map((service) => keytar.setPassword(service, KEYCHAIN_ACCOUNT, serialized)))
+    } catch (error: unknown) {
+      const err = error instanceof Error ? error : null
+      if ((error as Record<string, unknown>)?.code === 'MODULE_NOT_FOUND' || err?.message?.includes('Cannot find module')) {
+        throw new Error('Keychain storage not available: native module not built')
+      }
+      throw new Error(`Failed to save token data to keychain: ${error}`)
+    }
+  }
 
-	/**
-	 * Check if keychain storage is available on this system
-	 */
-	async isAvailable(): Promise<boolean> {
-		try {
-			const keytar = await this.getKeytar()
-			if (!keytar) {
-				return false
-			}
+  /**
+   * Check if keychain storage is available on this system
+   */
+  async isAvailable(): Promise<boolean> {
+    try {
+      const keytar = await this.getKeytar()
+      if (!keytar) {
+        return false
+      }
 
-			// Try a read operation to verify keychain access
-			// This will throw if native module is not built
-			await keytar.getPassword(KEYCHAIN_SERVICE, '__test__')
-			return true
-		} catch (error) {
-			if (getEnv('DEBUG')) {
-				console.warn('Keychain not available:', error)
-			}
-			return false
-		}
-	}
+      // Try a read operation to verify keychain access
+      // This will throw if native module is not built
+      await keytar.getPassword(PRIMARY_KEYCHAIN_SERVICE, '__test__')
+      return true
+    } catch (error) {
+      if (getEnv('DEBUG')) {
+        console.warn('Keychain not available:', error)
+      }
+      return false
+    }
+  }
 }
 
 /**
  * Secure file-based token storage for CLI
- * Stores token in ~/.oauth.do/token with restricted permissions (0600)
+ * Stores token in ~/.id.org.ai/token and mirrors ~/.oauth.do/token for
+ * migration compatibility, with restricted permissions (0600).
  *
  * Uses atomic writes (write-to-temp-then-rename) and advisory file locking
  * to prevent corruption from concurrent CLI commands.
@@ -321,164 +391,84 @@ export class KeychainTokenStorage implements TokenStorage {
  * Only works in Node.js environment.
  */
 export class SecureFileTokenStorage implements TokenStorage {
-	private tokenPath: string | null = null
-	private configDir: string | null = null
-	private initialized = false
-	private customPath?: string
+  private tokenPaths: string[] = []
+  private initialized = false
+  private customPath?: string
 
-	constructor(customPath?: string) {
-		this.customPath = customPath
-	}
+  constructor(customPath?: string) {
+    this.customPath = customPath
+  }
 
-	private async init(): Promise<boolean> {
-		if (this.initialized) return this.tokenPath !== null
-		this.initialized = true
+  private async init(): Promise<boolean> {
+    if (this.initialized) return this.tokenPaths.length > 0
+    this.initialized = true
 
-		if (!isNode()) return false
+    if (!isNode()) return false
 
-		try {
-			const os = await import('os')
-			const path = await import('path')
+    try {
+      const os = await import('os')
+      const pathModule = await import('path')
 
-			// Use custom path if provided
-			if (this.customPath) {
-				// Expand ~ to home directory
-				const expandedPath = this.customPath.startsWith('~/')
-					? path.join(os.homedir(), this.customPath.slice(2))
-					: this.customPath
+      if (this.customPath) {
+        this.tokenPaths = [expandStoragePath(this.customPath, os.homedir(), pathModule)]
+      } else {
+        this.tokenPaths = getDefaultTokenPaths(os.homedir(), pathModule)
+      }
+      return this.tokenPaths.length > 0
+    } catch {
+      return false
+    }
+  }
 
-				this.tokenPath = expandedPath
-				this.configDir = path.dirname(expandedPath)
-			} else {
-				// Default path
-				this.configDir = path.join(os.homedir(), '.oauth.do')
-				this.tokenPath = path.join(this.configDir, 'token')
-			}
-			return true
-		} catch {
-			return false
-		}
-	}
+  private getPrimaryTokenPath(): string | null {
+    return this.tokenPaths[0] ?? null
+  }
 
-	/** Get the lockfile path for advisory file locking */
-	private getLockPath(): string {
-		return `${this.tokenPath}.lock`
-	}
+  async getToken(): Promise<string | null> {
+    const data = await this.getTokenData()
+    return data?.accessToken ?? null
+  }
 
-	async getToken(): Promise<string | null> {
-		// Try to get from token data first (new format)
-		const data = await this.getTokenData()
-		if (data) {
-			return data.accessToken
-		}
+  async setToken(token: string): Promise<void> {
+    await this.setTokenData({ accessToken: token.trim() })
+  }
 
-		// Fall back to legacy plain text format
-		if (!(await this.init()) || !this.tokenPath) return null
+  async getTokenData(): Promise<StoredTokenData | null> {
+    if (!(await this.init()) || this.tokenPaths.length === 0) return null
 
-		const release = await acquireFileLock(this.getLockPath())
-		try {
-			const fs = await import('fs/promises')
-			const stats = await fs.stat(this.tokenPath)
-			const mode = stats.mode & 0o777
+    for (const tokenPath of this.tokenPaths) {
+      const data = await readStoredTokenDataFromFile(tokenPath)
+      if (data) return data
+    }
 
-			if (mode !== 0o600 && getEnv('DEBUG')) {
-				console.warn(
-					`Warning: Token file has insecure permissions (${mode.toString(8)}). ` +
-						`Expected 600. Run: chmod 600 ${this.tokenPath}`
-				)
-			}
+    return null
+  }
 
-			const content = await fs.readFile(this.tokenPath, 'utf-8')
-			const trimmed = content.trim()
+  async setTokenData(data: StoredTokenData): Promise<void> {
+    if (!(await this.init()) || this.tokenPaths.length === 0) {
+      throw new Error('File storage not available')
+    }
 
-			// Check if it's JSON (new format) or plain token (legacy)
-			if (trimmed.startsWith('{')) {
-				const parsed = JSON.parse(trimmed)
-				if (isStoredTokenData(parsed)) {
-					return parsed.accessToken
-				}
-				return null
-			}
+    try {
+      await Promise.all(this.tokenPaths.map((tokenPath) => writeStoredTokenDataToFile(tokenPath, data)))
+    } catch (error) {
+      console.error('Failed to save token data:', error)
+      throw error
+    }
+  }
 
-			return trimmed
-		} catch {
-			return null
-		} finally {
-			await release()
-		}
-	}
+  async removeToken(): Promise<void> {
+    if (!(await this.init()) || this.tokenPaths.length === 0) return
+    await Promise.all(this.tokenPaths.map((tokenPath) => removeStoredTokenFile(tokenPath)))
+  }
 
-	async setToken(token: string): Promise<void> {
-		// Store as token data for consistency, trimming whitespace
-		await this.setTokenData({ accessToken: token.trim() })
-	}
-
-	async getTokenData(): Promise<StoredTokenData | null> {
-		if (!(await this.init()) || !this.tokenPath) return null
-
-		const release = await acquireFileLock(this.getLockPath())
-		try {
-			const fs = await import('fs/promises')
-			const content = await fs.readFile(this.tokenPath, 'utf-8')
-			const trimmed = content.trim()
-
-			// Check if it's JSON format
-			if (trimmed.startsWith('{')) {
-				const parsed = JSON.parse(trimmed)
-				if (isStoredTokenData(parsed)) {
-					return parsed
-				}
-				return null
-			}
-
-			// Legacy plain text format - convert to token data
-			return { accessToken: trimmed }
-		} catch {
-			return null
-		} finally {
-			await release()
-		}
-	}
-
-	async setTokenData(data: StoredTokenData): Promise<void> {
-		if (!(await this.init()) || !this.tokenPath || !this.configDir) {
-			throw new Error('File storage not available')
-		}
-
-		const release = await acquireFileLock(this.getLockPath())
-		try {
-			const fs = await import('fs/promises')
-			await fs.mkdir(this.configDir, { recursive: true, mode: 0o700 })
-			await atomicWriteFile(this.tokenPath, JSON.stringify(data), 0o600)
-		} catch (error) {
-			console.error('Failed to save token data:', error)
-			throw error
-		} finally {
-			await release()
-		}
-	}
-
-	async removeToken(): Promise<void> {
-		if (!(await this.init()) || !this.tokenPath) return
-
-		const release = await acquireFileLock(this.getLockPath())
-		try {
-			const fs = await import('fs/promises')
-			await fs.unlink(this.tokenPath)
-		} catch {
-			// Ignore errors if file doesn't exist
-		} finally {
-			await release()
-		}
-	}
-
-	/**
-	 * Get information about the storage backend
-	 */
-	async getStorageInfo(): Promise<{ type: 'file'; secure: boolean; path: string | null }> {
-		await this.init()
-		return { type: 'file', secure: true, path: this.tokenPath }
-	}
+  /**
+   * Get information about the storage backend
+   */
+  async getStorageInfo(): Promise<{ type: 'file'; secure: boolean; path: string | null }> {
+    await this.init()
+    return { type: 'file', secure: true, path: this.getPrimaryTokenPath() }
+  }
 }
 
 /**
@@ -492,155 +482,155 @@ export class SecureFileTokenStorage implements TokenStorage {
  * @deprecated Use SecureFileTokenStorage or KeychainTokenStorage instead
  */
 export class FileTokenStorage implements TokenStorage {
-	private tokenPath: string | null = null
-	private configDir: string | null = null
-	private initialized = false
+  private tokenPath: string | null = null
+  private configDir: string | null = null
+  private initialized = false
 
-	private async init(): Promise<boolean> {
-		if (this.initialized) return this.tokenPath !== null
-		this.initialized = true
+  private async init(): Promise<boolean> {
+    if (this.initialized) return this.tokenPath !== null
+    this.initialized = true
 
-		if (!isNode()) return false
+    if (!isNode()) return false
 
-		try {
-			const os = await import('os')
-			const path = await import('path')
-			this.configDir = path.join(os.homedir(), '.oauth.do')
-			this.tokenPath = path.join(this.configDir, 'token')
-			return true
-		} catch {
-			return false
-		}
-	}
+    try {
+      const os = await import('os')
+      const path = await import('path')
+      this.configDir = path.join(os.homedir(), '.oauth.do')
+      this.tokenPath = path.join(this.configDir, 'token')
+      return true
+    } catch {
+      return false
+    }
+  }
 
-	/** Get the lockfile path for advisory file locking */
-	private getLockPath(): string {
-		return `${this.tokenPath}.lock`
-	}
+  /** Get the lockfile path for advisory file locking */
+  private getLockPath(): string {
+    return `${this.tokenPath}.lock`
+  }
 
-	async getToken(): Promise<string | null> {
-		if (!(await this.init()) || !this.tokenPath) return null
+  async getToken(): Promise<string | null> {
+    if (!(await this.init()) || !this.tokenPath) return null
 
-		const release = await acquireFileLock(this.getLockPath())
-		try {
-			const fs = await import('fs/promises')
-			const token = await fs.readFile(this.tokenPath, 'utf-8')
-			return token.trim()
-		} catch {
-			return null
-		} finally {
-			await release()
-		}
-	}
+    const release = await acquireFileLock(this.getLockPath())
+    try {
+      const fs = await import('fs/promises')
+      const token = await fs.readFile(this.tokenPath, 'utf-8')
+      return token.trim()
+    } catch {
+      return null
+    } finally {
+      await release()
+    }
+  }
 
-	async setToken(token: string): Promise<void> {
-		if (!(await this.init()) || !this.tokenPath || !this.configDir) {
-			throw new Error('File storage not available')
-		}
+  async setToken(token: string): Promise<void> {
+    if (!(await this.init()) || !this.tokenPath || !this.configDir) {
+      throw new Error('File storage not available')
+    }
 
-		const release = await acquireFileLock(this.getLockPath())
-		try {
-			const fs = await import('fs/promises')
-			await fs.mkdir(this.configDir, { recursive: true })
-			await atomicWriteFile(this.tokenPath, token)
-		} catch (error) {
-			console.error('Failed to save token:', error)
-			throw error
-		} finally {
-			await release()
-		}
-	}
+    const release = await acquireFileLock(this.getLockPath())
+    try {
+      const fs = await import('fs/promises')
+      await fs.mkdir(this.configDir, { recursive: true })
+      await atomicWriteFile(this.tokenPath, token)
+    } catch (error) {
+      console.error('Failed to save token:', error)
+      throw error
+    } finally {
+      await release()
+    }
+  }
 
-	async removeToken(): Promise<void> {
-		if (!(await this.init()) || !this.tokenPath) return
+  async removeToken(): Promise<void> {
+    if (!(await this.init()) || !this.tokenPath) return
 
-		const release = await acquireFileLock(this.getLockPath())
-		try {
-			const fs = await import('fs/promises')
-			await fs.unlink(this.tokenPath)
-		} catch {
-			// Ignore errors if file doesn't exist
-		} finally {
-			await release()
-		}
-	}
+    const release = await acquireFileLock(this.getLockPath())
+    try {
+      const fs = await import('fs/promises')
+      await fs.unlink(this.tokenPath)
+    } catch {
+      // Ignore errors if file doesn't exist
+    } finally {
+      await release()
+    }
+  }
 }
 
 /**
  * In-memory token storage (for browser or testing)
  */
 export class MemoryTokenStorage implements TokenStorage {
-	private tokenData: StoredTokenData | null = null
+  private tokenData: StoredTokenData | null = null
 
-	async getToken(): Promise<string | null> {
-		return this.tokenData?.accessToken ?? null
-	}
+  async getToken(): Promise<string | null> {
+    return this.tokenData?.accessToken ?? null
+  }
 
-	async setToken(token: string): Promise<void> {
-		this.tokenData = { accessToken: token }
-	}
+  async setToken(token: string): Promise<void> {
+    this.tokenData = { accessToken: token }
+  }
 
-	async removeToken(): Promise<void> {
-		this.tokenData = null
-	}
+  async removeToken(): Promise<void> {
+    this.tokenData = null
+  }
 
-	async getTokenData(): Promise<StoredTokenData | null> {
-		return this.tokenData
-	}
+  async getTokenData(): Promise<StoredTokenData | null> {
+    return this.tokenData
+  }
 
-	async setTokenData(data: StoredTokenData): Promise<void> {
-		this.tokenData = data
-	}
+  async setTokenData(data: StoredTokenData): Promise<void> {
+    this.tokenData = data
+  }
 }
 
 /**
  * LocalStorage-based token storage (for browser)
  */
 export class LocalStorageTokenStorage implements TokenStorage {
-	private key = 'oauth.do:token'
+  private key = 'oauth.do:token'
 
-	async getToken(): Promise<string | null> {
-		const data = await this.getTokenData()
-		return data?.accessToken ?? null
-	}
+  async getToken(): Promise<string | null> {
+    const data = await this.getTokenData()
+    return data?.accessToken ?? null
+  }
 
-	async setToken(token: string): Promise<void> {
-		await this.setTokenData({ accessToken: token })
-	}
+  async setToken(token: string): Promise<void> {
+    await this.setTokenData({ accessToken: token })
+  }
 
-	async removeToken(): Promise<void> {
-		if (typeof localStorage === 'undefined') {
-			return
-		}
-		localStorage.removeItem(this.key)
-	}
+  async removeToken(): Promise<void> {
+    if (typeof localStorage === 'undefined') {
+      return
+    }
+    localStorage.removeItem(this.key)
+  }
 
-	async getTokenData(): Promise<StoredTokenData | null> {
-		if (typeof localStorage === 'undefined') {
-			return null
-		}
-		const stored = localStorage.getItem(this.key)
-		if (!stored) {
-			return null
-		}
-		// Check if it's JSON format
-		if (stored.startsWith('{')) {
-			const parsed = JSON.parse(stored)
-			if (isStoredTokenData(parsed)) {
-				return parsed
-			}
-			return null
-		}
-		// Legacy plain text format
-		return { accessToken: stored }
-	}
+  async getTokenData(): Promise<StoredTokenData | null> {
+    if (typeof localStorage === 'undefined') {
+      return null
+    }
+    const stored = localStorage.getItem(this.key)
+    if (!stored) {
+      return null
+    }
+    // Check if it's JSON format
+    if (stored.startsWith('{')) {
+      const parsed = JSON.parse(stored)
+      if (isStoredTokenData(parsed)) {
+        return parsed
+      }
+      return null
+    }
+    // Legacy plain text format
+    return { accessToken: stored }
+  }
 
-	async setTokenData(data: StoredTokenData): Promise<void> {
-		if (typeof localStorage === 'undefined') {
-			throw new Error('localStorage is not available')
-		}
-		localStorage.setItem(this.key, JSON.stringify(data))
-	}
+  async setTokenData(data: StoredTokenData): Promise<void> {
+    if (typeof localStorage === 'undefined') {
+      throw new Error('localStorage is not available')
+    }
+    localStorage.setItem(this.key, JSON.stringify(data))
+  }
 }
 
 /**
@@ -648,124 +638,124 @@ export class LocalStorageTokenStorage implements TokenStorage {
  * Attempts keychain first, then falls back to secure file storage
  */
 export class CompositeTokenStorage implements TokenStorage {
-	private keychainStorage: KeychainTokenStorage
-	private fileStorage: SecureFileTokenStorage
-	private preferredStorage: TokenStorage | null = null
+  private keychainStorage: KeychainTokenStorage
+  private fileStorage: SecureFileTokenStorage
+  private preferredStorage: TokenStorage | null = null
 
-	constructor() {
-		this.keychainStorage = new KeychainTokenStorage()
-		this.fileStorage = new SecureFileTokenStorage()
-	}
+  constructor() {
+    this.keychainStorage = new KeychainTokenStorage()
+    this.fileStorage = new SecureFileTokenStorage()
+  }
 
-	/**
-	 * Determine the best available storage backend
-	 */
-	private async getPreferredStorage(): Promise<TokenStorage> {
-		if (this.preferredStorage) {
-			return this.preferredStorage
-		}
+  /**
+   * Determine the best available storage backend
+   */
+  private async getPreferredStorage(): Promise<TokenStorage> {
+    if (this.preferredStorage) {
+      return this.preferredStorage
+    }
 
-		// Try keychain first
-		if (await this.keychainStorage.isAvailable()) {
-			this.preferredStorage = this.keychainStorage
-			return this.preferredStorage
-		}
+    // Try keychain first
+    if (await this.keychainStorage.isAvailable()) {
+      this.preferredStorage = this.keychainStorage
+      return this.preferredStorage
+    }
 
-		// Fall back to secure file storage
-		this.preferredStorage = this.fileStorage
-		return this.preferredStorage
-	}
+    // Fall back to secure file storage
+    this.preferredStorage = this.fileStorage
+    return this.preferredStorage
+  }
 
-	async getToken(): Promise<string | null> {
-		// First, check keychain
-		const keychainToken = await this.keychainStorage.getToken()
-		if (keychainToken) {
-			return keychainToken
-		}
+  async getToken(): Promise<string | null> {
+    // First, check keychain
+    const keychainToken = await this.keychainStorage.getToken()
+    if (keychainToken) {
+      return keychainToken
+    }
 
-		// Fall back to file storage (for migration from old installations)
-		const fileToken = await this.fileStorage.getToken()
-		if (fileToken) {
-			// Migrate token to keychain if available
-			if (await this.keychainStorage.isAvailable()) {
-				try {
-					await this.keychainStorage.setToken(fileToken)
-					await this.fileStorage.removeToken()
-					if (getEnv('DEBUG')) {
-						console.log('Migrated token from file to keychain')
-					}
-				} catch {
-					// Continue with file token if migration fails
-				}
-			}
-			return fileToken
-		}
+    // Fall back to file storage (for migration from old installations)
+    const fileToken = await this.fileStorage.getToken()
+    if (fileToken) {
+      // Migrate token to keychain if available
+      if (await this.keychainStorage.isAvailable()) {
+        try {
+          await this.keychainStorage.setToken(fileToken)
+          await this.fileStorage.removeToken()
+          if (getEnv('DEBUG')) {
+            console.log('Migrated token from file to keychain')
+          }
+        } catch {
+          // Continue with file token if migration fails
+        }
+      }
+      return fileToken
+    }
 
-		return null
-	}
+    return null
+  }
 
-	async setToken(token: string): Promise<void> {
-		const storage = await this.getPreferredStorage()
-		await storage.setToken(token)
-	}
+  async setToken(token: string): Promise<void> {
+    const storage = await this.getPreferredStorage()
+    await storage.setToken(token)
+  }
 
-	async removeToken(): Promise<void> {
-		// Remove from both storages to ensure complete logout
-		await Promise.all([this.keychainStorage.removeToken(), this.fileStorage.removeToken()])
-	}
+  async removeToken(): Promise<void> {
+    // Remove from both storages to ensure complete logout
+    await Promise.all([this.keychainStorage.removeToken(), this.fileStorage.removeToken()])
+  }
 
-	async getTokenData(): Promise<StoredTokenData | null> {
-		// First, check keychain
-		const keychainData = await this.keychainStorage.getTokenData()
-		if (keychainData) {
-			return keychainData
-		}
+  async getTokenData(): Promise<StoredTokenData | null> {
+    // First, check keychain
+    const keychainData = await this.keychainStorage.getTokenData()
+    if (keychainData) {
+      return keychainData
+    }
 
-		// Fall back to file storage (for migration from old installations)
-		const fileData = await this.fileStorage.getTokenData()
-		if (fileData) {
-			// Migrate token data to keychain if available
-			if (await this.keychainStorage.isAvailable()) {
-				try {
-					await this.keychainStorage.setTokenData(fileData)
-					await this.fileStorage.removeToken()
-					if (getEnv('DEBUG')) {
-						console.log('Migrated token data from file to keychain')
-					}
-				} catch {
-					// Continue with file token if migration fails
-				}
-			}
-			return fileData
-		}
+    // Fall back to file storage (for migration from old installations)
+    const fileData = await this.fileStorage.getTokenData()
+    if (fileData) {
+      // Migrate token data to keychain if available
+      if (await this.keychainStorage.isAvailable()) {
+        try {
+          await this.keychainStorage.setTokenData(fileData)
+          await this.fileStorage.removeToken()
+          if (getEnv('DEBUG')) {
+            console.log('Migrated token data from file to keychain')
+          }
+        } catch {
+          // Continue with file token if migration fails
+        }
+      }
+      return fileData
+    }
 
-		return null
-	}
+    return null
+  }
 
-	async setTokenData(data: StoredTokenData): Promise<void> {
-		const storage = await this.getPreferredStorage()
-		if (storage.setTokenData) {
-			await storage.setTokenData(data)
-		} else {
-			// Fallback for storages that don't support tokenData
-			await storage.setToken(data.accessToken)
-		}
-	}
+  async setTokenData(data: StoredTokenData): Promise<void> {
+    const storage = await this.getPreferredStorage()
+    if (storage.setTokenData) {
+      await storage.setTokenData(data)
+    } else {
+      // Fallback for storages that don't support tokenData
+      await storage.setToken(data.accessToken)
+    }
+  }
 
-	/**
-	 * Get information about the current storage backend
-	 */
-	async getStorageInfo(): Promise<{ type: 'keychain' | 'file'; secure: boolean }> {
-		if (await this.keychainStorage.isAvailable()) {
-			return { type: 'keychain', secure: true }
-		}
-		return { type: 'file', secure: true }
-	}
+  /**
+   * Get information about the current storage backend
+   */
+  async getStorageInfo(): Promise<{ type: 'keychain' | 'file'; secure: boolean }> {
+    if (await this.keychainStorage.isAvailable()) {
+      return { type: 'keychain', secure: true }
+    }
+    return { type: 'file', secure: true }
+  }
 }
 
 /**
  * Create the default token storage
- * - Node.js: Uses secure file storage (~/.oauth.do/token with 0600 permissions)
+ * - Node.js: Uses secure file storage (~/.id.org.ai/token, mirrored to ~/.oauth.do/token)
  * - Browser: Uses localStorage
  * - Worker: Uses in-memory storage (tokens should be passed via env bindings)
  *
@@ -775,16 +765,16 @@ export class CompositeTokenStorage implements TokenStorage {
  * @param storagePath - Optional custom path for token storage (e.g., '~/.studio/tokens.json')
  */
 export function createSecureStorage(storagePath?: string): TokenStorage {
-	// Node.js - use secure file storage (no keychain popups)
-	if (isNode()) {
-		return new SecureFileTokenStorage(storagePath)
-	}
+  // Node.js - use secure file storage (no keychain popups)
+  if (isNode()) {
+    return new SecureFileTokenStorage(storagePath)
+  }
 
-	// Browser - use localStorage
-	if (typeof localStorage !== 'undefined') {
-		return new LocalStorageTokenStorage()
-	}
+  // Browser - use localStorage
+  if (typeof localStorage !== 'undefined') {
+    return new LocalStorageTokenStorage()
+  }
 
-	// Workers/other - use memory storage
-	return new MemoryTokenStorage()
+  // Workers/other - use memory storage
+  return new MemoryTokenStorage()
 }
