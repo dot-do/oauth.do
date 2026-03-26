@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createOAuth21Server } from 'id.org.ai/oauth'
 import type { OAuthStorage } from 'id.org.ai/oauth'

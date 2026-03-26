@@ -1,7 +1,21 @@
+// @vitest-environment node
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { join } from 'path'
 import { homedir, tmpdir } from 'os'
 import { mkdir, rm, readFile, stat, writeFile, unlink } from 'fs/promises'
+
+// Mock keytar to avoid real macOS Keychain access (GUI popups, timeouts)
+const keychainStore = new Map<string, string>()
+vi.mock('keytar', () => ({
+  default: {
+    getPassword: async (service: string, account: string) => keychainStore.get(`${service}:${account}`) ?? null,
+    setPassword: async (service: string, account: string, password: string) => {
+      keychainStore.set(`${service}:${account}`, password)
+    },
+    deletePassword: async (service: string, account: string) => keychainStore.delete(`${service}:${account}`),
+  },
+}))
+
 import {
   MemoryTokenStorage,
   LocalStorageTokenStorage,
@@ -168,6 +182,7 @@ describe('TokenStorage', () => {
     let storage: KeychainTokenStorage
 
     beforeEach(() => {
+      keychainStore.clear()
       storage = new KeychainTokenStorage()
     })
 
@@ -219,6 +234,7 @@ describe('TokenStorage', () => {
     let storage: CompositeTokenStorage
 
     beforeEach(() => {
+      keychainStore.clear()
       storage = new CompositeTokenStorage()
     })
 
