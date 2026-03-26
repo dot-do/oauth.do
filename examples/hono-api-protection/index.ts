@@ -10,7 +10,6 @@
  * 5. Permission-based access control — require fine-grained permissions
  * 6. API key authentication — authenticate programmatic clients via X-API-Key header
  * 7. Combined auth — try JWT first, fall back to API key
- * 8. Session-based auth — encrypted cookie sessions with OAuth login flow
  *
  * Deploy to Cloudflare Workers with `wrangler deploy` or run locally with `npx tsx index.ts`.
  */
@@ -24,9 +23,6 @@ import {
   assertPermission,
   apiKey,
   combined,
-  sessionAuth,
-  requireSession,
-  createOAuthRoutes,
 } from 'oauth.do/hono'
 import type { AuthUser } from 'oauth.do/hono'
 
@@ -35,8 +31,8 @@ import type { AuthUser } from 'oauth.do/hono'
 // ---------------------------------------------------------------------------
 
 // In production, read these from environment variables or wrangler.jsonc [vars].
-// The JWKS URI points to your identity provider's JSON Web Key Set endpoint.
-const JWKS_URI = 'https://api.workos.com/sso/jwks/client_01JQYTRXK9ZPD8JPJTKDCRB656'
+// The JWKS URI points to the id.org.ai JSON Web Key Set endpoint.
+const JWKS_URI = 'https://id.org.ai/.well-known/jwks.json'
 
 // ---------------------------------------------------------------------------
 // App
@@ -69,9 +65,10 @@ app.get('/', (c) => {
     user: c.var.user ? { id: c.var.user.id, email: c.var.user.email } : null,
     endpoints: {
       public: ['GET /', 'GET /health'],
-      protected: ['GET /api/me', 'GET /api/projects'],
+      protected: ['GET /api/me', 'GET /api/projects', 'GET /dashboard'],
       admin: ['GET /admin/users'],
       apiKey: ['GET /api/data'],
+      combined: ['GET /api/events'],
     },
   })
 })
@@ -199,36 +196,6 @@ app.get(
         { type: 'signup', ts: Date.now() - 60000 },
       ],
       user: c.var.user,
-    })
-  },
-)
-
-// ---------------------------------------------------------------------------
-// 8. Session-based auth with OAuth login flow
-// ---------------------------------------------------------------------------
-
-// Mount OAuth routes (login, callback, logout, me, refresh)
-app.route(
-  '/auth',
-  createOAuthRoutes({
-    // In production, pass these via env:
-    // workosApiKey: env.WORKOS_API_KEY,
-    // clientId: env.WORKOS_CLIENT_ID,
-    // session: { secret: env.SESSION_SECRET },
-  }),
-)
-
-// Session-protected route
-app.get(
-  '/account',
-  requireSession(),
-  (c) => {
-    const session = c.var.session!
-    return c.json({
-      userId: session.userId,
-      email: session.email,
-      name: session.name,
-      organizationId: session.organizationId,
     })
   },
 )
