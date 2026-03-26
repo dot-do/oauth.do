@@ -2,7 +2,7 @@
  * oauth.do/hono - Hono middleware for authentication
  *
  * Lightweight authentication middleware for Cloudflare Workers.
- * Uses jose for JWT verification - no heavy WorkOS SDK dependency.
+ * Uses jose for JWT verification against id.org.ai JWKS.
  *
  * @packageDocumentation
  */
@@ -40,7 +40,7 @@ export interface AuthOptions {
   cookieName?: string
   /** Header name for Bearer token (default: 'Authorization') */
   headerName?: string
-  /** WorkOS Client ID for JWT audience verification */
+  /** Client ID for JWT audience verification (optional) */
   clientId?: string
   /** JWKS URI for token verification (required) */
   jwksUri: string
@@ -192,7 +192,7 @@ async function getJwks(jwksUri: string, cacheTtl: number): Promise<jose.JWTVerif
  * import { auth } from 'oauth.do/hono'
  *
  * const app = new Hono()
- * app.use('*', auth({ jwksUri: 'https://api.workos.com/sso/jwks/client_xxx' }))
+ * app.use('*', auth({ jwksUri: 'https://id.org.ai/.well-known/jwks.json' }))
  *
  * app.get('/api/me', (c) => {
  *   if (!c.var.user) return c.json({ error: 'Not authenticated' }, 401)
@@ -211,7 +211,7 @@ export function auth(options: AuthOptions): MiddlewareHandler {
   } = options
 
   if (!jwksUri) {
-    throw new Error('oauth.do auth() middleware requires a "jwksUri" option. Example: auth({ jwksUri: "https://api.workos.com/sso/jwks/<your-client-id>" })')
+    throw new Error('oauth.do auth() middleware requires a "jwksUri" option. Example: auth({ jwksUri: "https://id.org.ai/.well-known/jwks.json" })')
   }
 
   return async (c, next) => {
@@ -273,8 +273,8 @@ export function auth(options: AuthOptions): MiddlewareHandler {
  * import { auth, requireAuth } from 'oauth.do/hono'
  *
  * const app = new Hono()
- * app.use('*', auth({ jwksUri: 'https://api.workos.com/sso/jwks/client_xxx' }))
- * app.use('/api/*', requireAuth({ jwksUri: 'https://api.workos.com/sso/jwks/client_xxx' }))
+ * app.use('*', auth({ jwksUri: 'https://id.org.ai/.well-known/jwks.json' }))
+ * app.use('/api/*', requireAuth({ jwksUri: 'https://id.org.ai/.well-known/jwks.json' }))
  *
  * app.get('/api/secret', (c) => {
  *   return c.json({ secret: 'data', user: c.var.user })
@@ -382,11 +382,9 @@ export function apiKey(options: ApiKeyOptions): MiddlewareHandler {
  * ```
  */
 // ═══════════════════════════════════════════════════════════════════════════
-// Session Auth Re-exports
+// Session Re-exports
 // ═══════════════════════════════════════════════════════════════════════════
 
-export { sessionAuth, requireSession, createOAuthRoutes } from './session-hono'
-export type { SessionUser, SessionAuthOptions, OAuthRoutesOptions, SessionEnv } from './session-hono'
 export { encodeSession, decodeSession, getSessionConfig } from './session'
 export type { SessionData, SessionConfig } from './session'
 
