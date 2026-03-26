@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@dotdo/oauth':
-        specifier: ^0.1.6
-        version: 0.1.6(hono@4.11.5)
       id.org.ai:
         specifier: ^0.2.0
         version: 0.2.0
@@ -222,11 +219,6 @@ packages:
     peerDependenciesMeta:
       '@cloudflare/workers-types':
         optional: true
-
-  '@dotdo/oauth@0.1.6':
-    resolution: {integrity: sha512-C4ubQlVDxLFBiJxvuWrx/9aQJpKoYaA7MTmDcv3ymp530d2BHRVp1f2PkFcPqVjiILh+/Itx7gaX7PK0Q/AVxQ==}
-    peerDependencies:
-      hono: '>=4.0.0'
 
   '@dotdo/types@0.1.1':
     resolution: {integrity: sha512-7khQZk/+aJpzudoFojJiYt01QVjXmBkzwbOZFVgBn2ZPtH8l2/GonQViFsk8tuczthcxV1yzRSp1atI0Vc5XKw==}
@@ -3084,10 +3076,6 @@ snapshots:
       '@cloudflare/workers-types': 4.20260128.0
     transitivePeerDependencies:
       - typescript
-
-  '@dotdo/oauth@0.1.6(hono@4.11.5)':
-    dependencies:
-      hono: 4.11.5
 
   '@dotdo/types@0.1.1(typescript@5.9.3)':
     optionalDependencies:

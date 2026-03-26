@@ -99,7 +99,6 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@dotdo/oauth": "^0.1.6",
     "id.org.ai": "^0.2.0",
     "open": "^10.1.0"
   },
