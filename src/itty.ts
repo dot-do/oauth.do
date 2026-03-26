@@ -7,13 +7,8 @@
  * @packageDocumentation
  */
 
-import type { JWTPayload } from 'jose'
 import * as jose from 'jose'
-
-// Cloudflare Workers Cache API type
-declare const caches: {
-  default: Cache
-}
+import { getCachedUser, cacheUser, payloadToUser, getJwks } from './auth-shared.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -88,62 +83,9 @@ function getDefaultConfig() {
   }
 }
 
-const TOKEN_CACHE_TTL = 5 * 60 // 5 minutes
-const CACHE_URL_PREFIX = 'https://oauth.do/_cache/token/'
-
 // ═══════════════════════════════════════════════════════════════════════════
 // JWT Utilities
 // ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Hash a token for cache key (avoids storing raw tokens in cache)
- */
-async function hashToken(token: string): Promise<string> {
-  const data = new TextEncoder().encode(token)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-/**
- * Get cached user from Cache API
- */
-async function getCachedUser(token: string): Promise<AuthUser | null> {
-  try {
-    const cache = caches.default
-    const hash = await hashToken(token)
-    const cacheKey = new Request(`${CACHE_URL_PREFIX}${hash}`)
-    const cached = await cache.match(cacheKey)
-
-    if (!cached) return null
-
-    const data = (await cached.json()) as { user: AuthUser; expiresAt: number }
-    if (data.expiresAt < Date.now()) return null
-
-    return data.user
-  } catch {
-    return null
-  }
-}
-
-/**
- * Cache user in Cache API
- */
-async function cacheUser(token: string, user: AuthUser): Promise<void> {
-  try {
-    const cache = caches.default
-    const hash = await hashToken(token)
-    const cacheKey = new Request(`${CACHE_URL_PREFIX}${hash}`)
-    const data = { user, expiresAt: Date.now() + TOKEN_CACHE_TTL * 1000 }
-    const response = new Response(JSON.stringify(data), {
-      headers: { 'Cache-Control': `max-age=${TOKEN_CACHE_TTL}` },
-    })
-    await cache.put(cacheKey, response)
-  } catch {
-    // Cache failures are non-fatal
-  }
-}
 
 /**
  * Parse cookies from request
@@ -180,38 +122,6 @@ function extractToken(request: Request, cookieName: string, headerName: string):
   return null
 }
 
-/**
- * Convert JWT payload to AuthUser
- */
-function payloadToUser(payload: JWTPayload): AuthUser {
-  return {
-    id: payload.sub || '',
-    email: payload.email as string | undefined,
-    name: payload.name as string | undefined,
-    organizationId: payload.org_id as string | undefined,
-    roles: payload.roles as string[] | undefined,
-    permissions: payload.permissions as string[] | undefined,
-    metadata: payload.metadata as Record<string, unknown> | undefined,
-  }
-}
-
-// JWKS cache (module-level, persists across requests)
-let jwksCache: jose.JWTVerifyGetKey | null = null
-let jwksCacheExpiry = 0
-
-/**
- * Get JWKS verifier with caching
- */
-async function getJwks(jwksUri: string, cacheTtl: number): Promise<jose.JWTVerifyGetKey> {
-  const now = Date.now()
-  if (jwksCache && jwksCacheExpiry > now) {
-    return jwksCache
-  }
-
-  jwksCache = jose.createRemoteJWKSet(new URL(jwksUri))
-  jwksCacheExpiry = now + cacheTtl * 1000
-  return jwksCache
-}
 
 /**
  * Create default auth context
