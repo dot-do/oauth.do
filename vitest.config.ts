@@ -34,9 +34,6 @@ export default defineConfig({
       'cloudflare:workers': resolve(__dirname, 'tests/mocks/cloudflare-workers.ts'),
       // Mock @mdxui/auth for React tests (package has broken dependencies)
       '@mdxui/auth': resolve(__dirname, 'tests/mocks/mdxui-auth.ts'),
-      // Resolve shared auth code from source so tests don't require a built id.org.ai package
-      'id.org.ai/auth': resolve(__dirname, '../../.org.ai/id/src/auth/index.ts'),
-      'id.org.ai/oauth': resolve(__dirname, '../../.org.ai/id/src/oauth/index.ts'),
       '@dotdo/events-sdk': resolve(__dirname, '../events-sdk/src/index.ts'),
     },
   },

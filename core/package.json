@@ -65,7 +65,7 @@
   "dependencies": {
     "@dotdo/collections": "^0.1.1",
     "hono": "^4.7.0",
-    "id.org.ai": "workspace:*"
+    "id.org.ai": "^0.2.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250124.0",
