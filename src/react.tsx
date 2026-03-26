@@ -2,7 +2,7 @@
  * oauth.do/react - React components for authentication
  *
  * Wraps @mdxui/auth with oauth.do configuration.
- * Pre-configured with oauth.do WorkOS client ID and domain.
+ * Pre-configured with id.org.ai identity defaults.
  *
  * @packageDocumentation
  */
