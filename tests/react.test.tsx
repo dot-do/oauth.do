@@ -132,7 +132,7 @@ describe('React Components', () => {
         </OAuthDoProvider>,
       )
 
-      expect(screen.getByTestId('client-id')).toHaveTextContent('client_01JQYTRXK9ZPD8JPJTKDCRB656')
+      expect(screen.getByTestId('client-id')).toHaveTextContent('oauth_do_cli')
       expect(screen.getByTestId('api-url')).toHaveTextContent('https://id.org.ai')
       expect(screen.getByTestId('auth-domain')).toHaveTextContent('id.org.ai')
     })
@@ -206,7 +206,7 @@ describe('React Components', () => {
         </OAuthDoProvider>,
       )
 
-      expect(screen.getByTestId('client-id')).toHaveTextContent('client_01JQYTRXK9ZPD8JPJTKDCRB656')
+      expect(screen.getByTestId('client-id')).toHaveTextContent('oauth_do_cli')
       expect(screen.getByTestId('api-url')).toHaveTextContent('https://id.org.ai')
       expect(screen.getByTestId('auth-domain')).toHaveTextContent('id.org.ai')
     })
@@ -338,7 +338,7 @@ describe('React Components', () => {
       fireEvent.click(screen.getByRole('button'))
 
       expect(window.location.href).toContain('https://id.org.ai')
-      expect(window.location.href).toContain('client_id=client_01JQYTRXK9ZPD8JPJTKDCRB656')
+      expect(window.location.href).toContain('client_id=oauth_do_cli')
       expect(window.location.href).toContain('response_type=code')
     })
 

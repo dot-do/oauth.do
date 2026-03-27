@@ -14,7 +14,7 @@ import { authorizeDevice, pollForTokens } from './device.js'
 import { getUser, logout as logoutFn } from './auth.js'
 import { createSecureStorage, SecureFileTokenStorage } from './storage.js'
 import { configure } from './config.js'
-import { CANONICAL_API_ORIGIN, CANONICAL_AUTHKIT_DOMAIN, DEFAULT_CALLBACK_URL } from 'id.org.ai/auth'
+import { CANONICAL_API_ORIGIN, CANONICAL_AUTHKIT_DOMAIN, DEFAULT_CALLBACK_URL, OAUTH_DO_CLI_CLIENT_ID } from 'id.org.ai/auth'
 
 // Color codes for terminal output
 const colors = {
@@ -38,7 +38,7 @@ const storage = createSecureStorage()
 function configureFromEnv() {
   configure({
     apiUrl: process.env.OAUTH_API_URL || process.env.API_URL || CANONICAL_API_ORIGIN,
-    clientId: process.env.OAUTH_CLIENT_ID || 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
+    clientId: process.env.OAUTH_CLIENT_ID || OAUTH_DO_CLI_CLIENT_ID,
     authKitDomain: process.env.OAUTH_AUTHKIT_DOMAIN || CANONICAL_AUTHKIT_DOMAIN,
   })
 }

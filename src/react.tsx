@@ -26,14 +26,14 @@ import {
   type Impersonator,
   type IdentityProviderProps,
 } from '@mdxui/auth'
-import { CANONICAL_API_ORIGIN, CANONICAL_AUTHKIT_DOMAIN } from 'id.org.ai/auth'
+import { CANONICAL_API_ORIGIN, CANONICAL_AUTHKIT_DOMAIN, OAUTH_DO_CLI_CLIENT_ID } from 'id.org.ai/auth'
 
 // ===============================================================================
 // oauth.do default configuration
 // ===============================================================================
 
 const OAUTH_DO_CONFIG = {
-  clientId: 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
+  clientId: OAUTH_DO_CLI_CLIENT_ID,
   apiUrl: CANONICAL_API_ORIGIN,
   authKitDomain: CANONICAL_AUTHKIT_DOMAIN,
 }
@@ -85,7 +85,7 @@ export interface OAuthDoProviderProps {
  * OAuth.do Provider - wraps your app with authentication context
  *
  * Pre-configured with oauth.do defaults:
- * - clientId: client_01JQYTRXK9ZPD8JPJTKDCRB656
+ * - clientId: oauth_do_cli
  * - authKitDomain: id.org.ai
  * - apiUrl: https://id.org.ai
  *

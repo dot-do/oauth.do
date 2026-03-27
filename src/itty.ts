@@ -8,6 +8,7 @@
  */
 
 import * as jose from 'jose'
+import { OAUTH_DO_CLI_CLIENT_ID } from 'id.org.ai/auth'
 import { getCachedUser, cacheUser, payloadToUser, getJwks } from './auth-shared.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -73,7 +74,7 @@ export interface ApiKeyOptions {
 // Constants
 // ═══════════════════════════════════════════════════════════════════════════
 
-const DEFAULT_CLIENT_ID = 'client_01JQYTRXK9ZPD8JPJTKDCRB656'
+const DEFAULT_CLIENT_ID = OAUTH_DO_CLI_CLIENT_ID
 
 function getDefaultConfig() {
   const clientId = (typeof process !== 'undefined' && process.env?.OAUTH_CLIENT_ID) || DEFAULT_CLIENT_ID

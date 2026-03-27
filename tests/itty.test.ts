@@ -497,7 +497,7 @@ describe('itty middleware', () => {
       expect(vi.mocked(jose.jwtVerify)).toHaveBeenCalled()
       const callArgs = vi.mocked(jose.jwtVerify).mock.calls[0]
       expect(callArgs[0]).toBe('valid-token')
-      expect(callArgs[2]).toEqual({ audience: 'client_01JQYTRXK9ZPD8JPJTKDCRB656' })
+      expect(callArgs[2]).toEqual({ audience: 'oauth_do_cli' })
     })
 
     it('should use custom client ID when provided', async () => {

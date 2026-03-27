@@ -1,5 +1,5 @@
 import type { OAuthConfig } from './types.js'
-import { CANONICAL_API_ORIGIN, CANONICAL_AUTHKIT_DOMAIN } from 'id.org.ai/auth'
+import { CANONICAL_API_ORIGIN, CANONICAL_AUTHKIT_DOMAIN, OAUTH_DO_CLI_CLIENT_ID } from 'id.org.ai/auth'
 import { getEnv } from './utils.js'
 
 /**
@@ -8,7 +8,7 @@ import { getEnv } from './utils.js'
  */
 let globalConfig: Omit<Required<OAuthConfig>, 'storagePath'> & Pick<OAuthConfig, 'storagePath'> = {
   apiUrl: getEnv('OAUTH_API_URL') || getEnv('API_URL') || CANONICAL_API_ORIGIN,
-  clientId: getEnv('OAUTH_CLIENT_ID') || 'client_01JQYTRXK9ZPD8JPJTKDCRB656',
+  clientId: getEnv('OAUTH_CLIENT_ID') || OAUTH_DO_CLI_CLIENT_ID,
   authKitDomain: getEnv('OAUTH_AUTHKIT_DOMAIN') || CANONICAL_AUTHKIT_DOMAIN,
   fetch: globalThis.fetch,
   storagePath: getEnv('OAUTH_STORAGE_PATH'),
