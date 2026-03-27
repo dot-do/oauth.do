@@ -73,21 +73,19 @@ export function useOAuthDoConfig(): OAuthDoContextValue {
 
 export interface OAuthDoProviderProps {
   children: ReactNode
-  /** Override the default client ID */
-  clientId?: string
-  /** Override the API URL */
+  /** Your registered OAuth client ID (required — register at id.org.ai) */
+  clientId: string
+  /** Override the API URL (default: https://id.org.ai) */
   apiUrl?: string
-  /** Override the AuthKit domain */
+  /** Override the AuthKit domain (default: id.org.ai) */
   authKitDomain?: string
 }
 
 /**
  * OAuth.do Provider - wraps your app with authentication context
  *
- * Pre-configured with oauth.do defaults:
- * - clientId: oauth_do_cli
- * - authKitDomain: id.org.ai
- * - apiUrl: https://id.org.ai
+ * Requires a registered client ID. Register your app at id.org.ai to get one.
+ * apiUrl and authKitDomain default to id.org.ai.
  *
  * @example
  * ```tsx
@@ -95,7 +93,7 @@ export interface OAuthDoProviderProps {
  *
  * export default function App({ children }) {
  *   return (
- *     <OAuthDoProvider>
+ *     <OAuthDoProvider clientId="your_registered_client_id">
  *       {children}
  *     </OAuthDoProvider>
  *   )
@@ -104,9 +102,9 @@ export interface OAuthDoProviderProps {
  *
  * @example
  * ```tsx
- * // With custom overrides
+ * // With custom API URL
  * <OAuthDoProvider
- *   clientId="custom-client-id"
+ *   clientId="your_registered_client_id"
  *   apiUrl="https://custom.api.do"
  * >
  *   {children}
@@ -115,7 +113,7 @@ export interface OAuthDoProviderProps {
  */
 export function OAuthDoProvider({
   children,
-  clientId = OAUTH_DO_CONFIG.clientId,
+  clientId,
   apiUrl = OAUTH_DO_CONFIG.apiUrl,
   authKitDomain = OAUTH_DO_CONFIG.authKitDomain,
 }: OAuthDoProviderProps): JSX.Element {

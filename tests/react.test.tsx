@@ -117,7 +117,7 @@ describe('React Components', () => {
   describe('OAuthDoProvider', () => {
     it('renders children', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <div data-testid='child'>Hello</div>
         </OAuthDoProvider>,
       )
@@ -125,14 +125,14 @@ describe('React Components', () => {
       expect(screen.getByTestId('child')).toHaveTextContent('Hello')
     })
 
-    it('provides context with default config', () => {
+    it('provides context with given clientId and default api/domain', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <ConfigDisplay />
         </OAuthDoProvider>,
       )
 
-      expect(screen.getByTestId('client-id')).toHaveTextContent('oauth_do_cli')
+      expect(screen.getByTestId('client-id')).toHaveTextContent('test-client')
       expect(screen.getByTestId('api-url')).toHaveTextContent('https://id.org.ai')
       expect(screen.getByTestId('auth-domain')).toHaveTextContent('id.org.ai')
     })
@@ -169,7 +169,7 @@ describe('React Components', () => {
 
     it('wraps children with IdentityProvider from @mdxui/auth', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <div>Content</div>
         </OAuthDoProvider>,
       )
@@ -179,7 +179,7 @@ describe('React Components', () => {
 
     it('wraps children with AuthKitProvider (via IdentityProvider)', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <div>Content</div>
         </OAuthDoProvider>,
       )
@@ -189,7 +189,7 @@ describe('React Components', () => {
 
     it('wraps children with WorkOsWidgets (via IdentityProvider)', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <div>Content</div>
         </OAuthDoProvider>,
       )
@@ -199,14 +199,14 @@ describe('React Components', () => {
   })
 
   describe('useOAuthDoConfig hook', () => {
-    it('returns default config values', () => {
+    it('returns provided config values', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <ConfigDisplay />
         </OAuthDoProvider>,
       )
 
-      expect(screen.getByTestId('client-id')).toHaveTextContent('oauth_do_cli')
+      expect(screen.getByTestId('client-id')).toHaveTextContent('test-client')
       expect(screen.getByTestId('api-url')).toHaveTextContent('https://id.org.ai')
       expect(screen.getByTestId('auth-domain')).toHaveTextContent('id.org.ai')
     })
@@ -227,7 +227,7 @@ describe('React Components', () => {
   describe('useAuth hook', () => {
     it('returns auth state from @mdxui/auth', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <AuthDisplay />
         </OAuthDoProvider>,
       )
@@ -258,7 +258,7 @@ describe('React Components', () => {
       })
 
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <AuthDisplay />
         </OAuthDoProvider>,
       )
@@ -288,7 +288,7 @@ describe('React Components', () => {
       })
 
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <AuthDisplay />
         </OAuthDoProvider>,
       )
@@ -300,7 +300,7 @@ describe('React Components', () => {
   describe('SignInButton', () => {
     it('renders with default text', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignInButton />
         </OAuthDoProvider>,
       )
@@ -310,7 +310,7 @@ describe('React Components', () => {
 
     it('renders with custom children', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignInButton>Custom Sign In Text</SignInButton>
         </OAuthDoProvider>,
       )
@@ -320,7 +320,7 @@ describe('React Components', () => {
 
     it('applies className prop', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignInButton className='custom-class'>Sign In</SignInButton>
         </OAuthDoProvider>,
       )
@@ -330,7 +330,7 @@ describe('React Components', () => {
 
     it('redirects to login URL on click', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignInButton />
         </OAuthDoProvider>,
       )
@@ -338,7 +338,7 @@ describe('React Components', () => {
       fireEvent.click(screen.getByRole('button'))
 
       expect(window.location.href).toContain('https://id.org.ai')
-      expect(window.location.href).toContain('client_id=oauth_do_cli')
+      expect(window.location.href).toContain('client_id=test-client')
       expect(window.location.href).toContain('response_type=code')
     })
 
@@ -349,7 +349,7 @@ describe('React Components', () => {
       })
 
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignInButton />
         </OAuthDoProvider>,
       )
@@ -361,7 +361,7 @@ describe('React Components', () => {
 
     it('uses custom redirectTo prop', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignInButton redirectTo='https://example.com/callback' />
         </OAuthDoProvider>,
       )
@@ -387,7 +387,7 @@ describe('React Components', () => {
   describe('SignOutButton', () => {
     it('renders with default text', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignOutButton />
         </OAuthDoProvider>,
       )
@@ -397,7 +397,7 @@ describe('React Components', () => {
 
     it('renders with custom children', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignOutButton>Custom Sign Out Text</SignOutButton>
         </OAuthDoProvider>,
       )
@@ -407,7 +407,7 @@ describe('React Components', () => {
 
     it('applies className prop', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignOutButton className='logout-button'>Sign Out</SignOutButton>
         </OAuthDoProvider>,
       )
@@ -417,7 +417,7 @@ describe('React Components', () => {
 
     it('calls signOut on click', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignOutButton />
         </OAuthDoProvider>,
       )
@@ -434,7 +434,7 @@ describe('React Components', () => {
       })
 
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignOutButton redirectTo='https://example.com/goodbye' />
         </OAuthDoProvider>,
       )
@@ -453,7 +453,7 @@ describe('React Components', () => {
       })
 
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <SignOutButton />
         </OAuthDoProvider>,
       )
@@ -469,7 +469,7 @@ describe('React Components', () => {
   describe('Widget Components', () => {
     it('renders ApiKeys widget with authToken', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <ApiKeys authToken='test-token' />
         </OAuthDoProvider>,
       )
@@ -479,7 +479,7 @@ describe('React Components', () => {
 
     it('renders UsersManagement widget with authToken', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <UsersManagement authToken='test-token' />
         </OAuthDoProvider>,
       )
@@ -489,7 +489,7 @@ describe('React Components', () => {
 
     it('renders UserProfile widget with authToken', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <UserProfile authToken='test-token' />
         </OAuthDoProvider>,
       )
@@ -501,7 +501,7 @@ describe('React Components', () => {
   describe('New Components from @mdxui/auth', () => {
     it('exports UserMenu component', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <UserMenu />
         </OAuthDoProvider>,
       )
@@ -511,7 +511,7 @@ describe('React Components', () => {
 
     it('exports TeamSwitcher component', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <TeamSwitcher />
         </OAuthDoProvider>,
       )
@@ -521,7 +521,7 @@ describe('React Components', () => {
 
     it('exports OrganizationSwitcher component', () => {
       render(
-        <OAuthDoProvider>
+        <OAuthDoProvider clientId='test-client'>
           <OrganizationSwitcher authToken={mockGetAccessToken} switchToOrganization={mockSwitchToOrganization} />
         </OAuthDoProvider>,
       )
