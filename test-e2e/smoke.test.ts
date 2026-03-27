@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 
 const ID_ORG_AI = 'https://id.org.ai'
 
@@ -20,6 +20,53 @@ describe('oauth.do e2e smoke tests', () => {
         expect(key.n).toBeDefined()
         expect(key.e).toBeDefined()
       }
+    })
+  })
+
+  describe('Device auth endpoint', () => {
+    let clientId: string
+
+    beforeAll(async () => {
+      // Register a fresh client via dynamic client registration (RFC 7591)
+      const reg = await fetch(`${ID_ORG_AI}/oauth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: 'oauth.do e2e test client',
+          grant_types: ['urn:ietf:params:oauth:grant-type:device_code'],
+          response_types: ['code'],
+          scope: 'openid profile email',
+          token_endpoint_auth_method: 'none',
+        }),
+      })
+      const regData = await reg.json() as Record<string, unknown>
+      clientId = regData.client_id as string
+    })
+
+    it('returns device code and verification URI', async () => {
+      const res = await fetch(`${ID_ORG_AI}/oauth/device`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          scope: 'openid profile email',
+        }).toString(),
+      })
+
+      expect(res.status).toBe(200)
+
+      const data = await res.json() as Record<string, unknown>
+      expect(data.device_code).toBeDefined()
+      expect(typeof data.device_code).toBe('string')
+      expect(data.user_code).toBeDefined()
+      expect(typeof data.user_code).toBe('string')
+      expect(data.verification_uri).toBeDefined()
+      expect(typeof data.verification_uri).toBe('string')
+      expect(data.verification_uri_complete).toBeDefined()
+      expect(data.expires_in).toBeDefined()
+      expect(typeof data.expires_in).toBe('number')
+      expect(data.interval).toBeDefined()
+      expect(typeof data.interval).toBe('number')
     })
   })
 
