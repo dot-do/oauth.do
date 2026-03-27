@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect } from 'vitest'
+import { OAUTH_DO_CLI_CLIENT_ID } from 'id.org.ai/auth'
 
 const ID_ORG_AI = 'https://id.org.ai'
 
@@ -24,31 +25,12 @@ describe('oauth.do e2e smoke tests', () => {
   })
 
   describe('Device auth endpoint', () => {
-    let clientId: string
-
-    beforeAll(async () => {
-      // Register a fresh client via dynamic client registration (RFC 7591)
-      const reg = await fetch(`${ID_ORG_AI}/oauth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_name: 'oauth.do e2e test client',
-          grant_types: ['urn:ietf:params:oauth:grant-type:device_code'],
-          response_types: ['code'],
-          scope: 'openid profile email',
-          token_endpoint_auth_method: 'none',
-        }),
-      })
-      const regData = await reg.json() as Record<string, unknown>
-      clientId = regData.client_id as string
-    })
-
-    it('returns device code and verification URI', async () => {
+    it('returns device code and verification URI for oauth_do_cli', async () => {
       const res = await fetch(`${ID_ORG_AI}/oauth/device`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          client_id: clientId,
+          client_id: OAUTH_DO_CLI_CLIENT_ID,
           scope: 'openid profile email',
         }).toString(),
       })
