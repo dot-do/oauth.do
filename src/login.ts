@@ -67,7 +67,7 @@ export interface LoginResult {
 }
 
 // Buffer time before expiration to trigger refresh (30 seconds)
-// WorkOS access tokens have a 5-minute TTL, so 5 minutes was too aggressive
+// id.org.ai access tokens have a 5-minute TTL, so 5 minutes was too aggressive
 const REFRESH_BUFFER_MS = 30 * 1000
 
 // Singleton promise for login/refresh operations

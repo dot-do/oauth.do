@@ -2,7 +2,7 @@
  * oauth.do/itty - itty-router middleware for authentication
  *
  * Lightweight authentication middleware for Cloudflare Workers using itty-router.
- * Uses jose for JWT verification - no heavy WorkOS SDK dependency.
+ * Uses jose for JWT verification against id.org.ai JWKS.
  *
  * @packageDocumentation
  */
@@ -43,9 +43,9 @@ export interface AuthOptions {
   cookieName?: string
   /** Header name for Bearer token (default: 'Authorization') */
   headerName?: string
-  /** WorkOS Client ID (default: oauth.do client ID) */
+  /** Client ID for JWT audience verification (optional) */
   clientId?: string
-  /** JWKS URI for token verification (default: WorkOS JWKS) */
+  /** JWKS URI for token verification (default: id.org.ai JWKS) */
   jwksUri?: string
   /** Skip auth for certain paths */
   skip?: (request: Request) => boolean
@@ -79,7 +79,7 @@ function getDefaultConfig() {
   const clientId = (typeof process !== 'undefined' && process.env?.OAUTH_CLIENT_ID) || DEFAULT_CLIENT_ID
   return {
     clientId,
-    jwksUri: `https://api.workos.com/sso/jwks/${clientId}`,
+    jwksUri: 'https://id.org.ai/.well-known/jwks.json',
   }
 }
 

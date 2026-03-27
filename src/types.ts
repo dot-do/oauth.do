@@ -150,7 +150,7 @@ export interface DeviceAuthorizationResponse {
 export interface TokenResponse {
   /** The access token issued by the authorization server */
   access_token: string
-  /** The type of the token issued (always "Bearer"). Optional because WorkOS device flow omits it. */
+  /** The type of the token issued (always "Bearer"). Optional because some device flows omit it. */
   token_type?: string
   /** The lifetime in seconds of the access token */
   expires_in?: number

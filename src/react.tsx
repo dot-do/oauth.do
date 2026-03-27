@@ -11,7 +11,7 @@
 
 import React, { createContext, useContext, type ReactNode } from 'react'
 
-// Import from @mdxui/auth instead of direct WorkOS packages
+// Import from @mdxui/auth for identity components
 import {
   IdentityProvider,
   useAuth as useMdxuiAuth,
@@ -387,7 +387,7 @@ export const UserMenu = MdxuiUserMenu
 /**
  * TeamSwitcher - Organization switching component
  *
- * Re-exported from @mdxui/auth. Shows WorkOS OrganizationSwitcher widget.
+ * Re-exported from @mdxui/auth. Shows organization switcher widget.
  *
  * @example
  * ```tsx

@@ -92,7 +92,7 @@ export function isLoginResponse(data: unknown): data is { user: User; token: str
  * Required: access_token (string)
  * Optional: token_type (string), expires_in (number), refresh_token (string), scope (string), user (User)
  *
- * Note: token_type is technically required by RFC 6749 but WorkOS device flow
+ * Note: token_type is technically required by RFC 6749 but some device flow
  * responses omit it, so we treat it as optional for compatibility.
  */
 export function isTokenResponse(data: unknown): data is TokenResponse {
@@ -287,7 +287,7 @@ export function isVerifyResult(data: unknown): data is VerifyResult {
 }
 
 /**
- * WorkOS user response shape
+ * Identity provider user response shape
  */
 export function isWorkOSUserResponse(
   data: unknown
